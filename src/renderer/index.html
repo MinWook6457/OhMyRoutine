@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; font-src 'self';">
+  <title>주간 업무 일지</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="segmented" role="group" aria-label="보기 모드">
+      <button id="viewWeek" class="seg" data-view="week">주간</button>
+      <button id="viewToday" class="seg" data-view="today">오늘</button>
+      <button id="viewLog" class="seg" data-view="log" title="아카이브 프로젝트 로그 작성">로그</button>
+    </div>
+
+    <div class="week-nav">
+      <button id="prevWeek" class="icon" title="이전 주">&#8249;</button>
+      <div class="week-label">
+        <strong id="weekTitle">—</strong>
+        <span id="weekRange" class="muted"></span>
+      </div>
+      <button id="nextWeek" class="icon" title="다음 주">&#8250;</button>
+      <button id="thisWeek" class="ghost">이번 주</button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <label class="dept week-only">
+      부서
+      <input id="department" type="text" spellcheck="false" size="4">
+    </label>
+    <button id="refresh" class="ghost week-only">새로고침</button>
+    <button id="saveAll" class="primary week-only">모두 저장 <kbd>Ctrl+S</kbd></button>
+    <button id="toggleWidget" class="ghost" title="바탕화면 위젯으로 전환">위젯</button>
+    <button id="hideWindow" class="ghost hidden" title="트레이로 숨기기">&#10005;</button>
+  </header>
+
+  <main id="days" class="days"></main>
+
+  <!-- 아카이브 프로젝트 로그 작성 패널 -->
+  <section id="logPanel" class="log-panel hidden">
+    <div id="logForm" class="log-form">
+      <div class="log-row">
+        <label class="field grow has-picker">
+          <span>프로젝트 <em class="muted">(즐겨찾기 목록, 이름으로 검색)</em></span>
+          <input id="logProject" spellcheck="false" autocomplete="off" placeholder="클릭해서 고르거나 이름 입력">
+          <ul id="logProjectPick" class="picker hidden"></ul>
+        </label>
+        <label class="field">
+          <span>일자</span>
+          <input id="logDate" type="date">
+        </label>
+        <label class="field">
+          <span>시작</span>
+          <input id="logStart" type="time" step="1800">
+        </label>
+        <label class="field">
+          <span>종료</span>
+          <input id="logEnd" type="time" step="1800">
+        </label>
+      </div>
+
+      <div class="log-row">
+        <label class="field grow has-picker">
+          <span>담당자 <em class="muted">(이름/부서로 검색)</em></span>
+          <input id="logManager" spellcheck="false" autocomplete="off" placeholder="프로젝트를 먼저 선택" disabled>
+          <ul id="logManagerPick" class="picker hidden"></ul>
+        </label>
+        <label class="field grow has-picker">
+          <span>참여인원 <em class="muted">(선택, 사용자/그룹 검색)</em></span>
+          <div id="logMembers" class="chips">
+            <input id="logMemberInput" spellcheck="false" autocomplete="off" placeholder="이름 입력 후 선택" disabled>
+          </div>
+          <ul id="logMemberPick" class="picker hidden"></ul>
+        </label>
+      </div>
+
+      <div class="log-row">
+        <label class="field grow">
+          <span>태그 <em class="muted">(선택, 쉼표 구분, 최대 10개)</em></span>
+          <input id="logTags" list="logTagList" spellcheck="false" autocomplete="off" placeholder="예: 분석, 미팅">
+          <datalist id="logTagList"></datalist>
+        </label>
+        <label class="check">
+          <input id="logPresentation" type="checkbox">
+          세일즈 회의 발표
+        </label>
+      </div>
+
+      <p id="logMeta" class="muted small"></p>
+
+      <textarea id="logText" class="log-editor" spellcheck="false"
+                placeholder="로그 내용을 적습니다.&#10;&#10;빈 줄 = 단락 구분 / - 항목 = 글머리 목록 (Tab 으로 하위 단계) / 1. 항목 = 번호 목록 / # 제목 = 소제목"></textarea>
+
+      <div class="log-actions">
+        <span id="logState" class="muted"></span>
+        <div class="spacer"></div>
+        <button id="logOpenProject" class="ghost">웹에서 프로젝트 열기</button>
+        <button id="logSubmit" class="primary">로그 생성 <kbd>Ctrl+Enter</kbd></button>
+      </div>
+    </div>
+
+    <div id="logAuth" class="log-auth hidden">
+      <p>아카이브(archive.insilicogen.com) 로그인이 필요합니다.</p>
+      <button id="logLogin" class="primary">아카이브 로그인</button>
+    </div>
+  </section>
+
+  <div id="overlay" class="overlay hidden">
+    <div class="overlay-box">
+      <p id="overlayText">불러오는 중…</p>
+      <button id="overlayAction" class="primary hidden">로그인</button>
+    </div>
+  </div>
+
+  <footer class="bar status">
+    <span id="status" class="muted">준비</span>
+    <div class="spacer"></div>
+    <span id="hint" class="muted hint">Tab = 하위 단계 (* → - → •) · Shift+Tab = 상위 · 오른쪽 상태 칸 Ctrl+1 진행중 / 2 진행대기 / 3 완료 / 4 작업대기 · 포커스 이동 시 자동 저장</span>
+    <button id="openWeb" class="ghost">웹에서 열기</button>
+  </footer>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

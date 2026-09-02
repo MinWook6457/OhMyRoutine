@@ -1,0 +1,97 @@
+{
+  "name": "routine-weekly",
+  "version": "1.1.0",
+  "description": "inpleROUTINE 주간 업무 일지 데스크톱 편집기",
+  "main": "src/main.js",
+  "author": "inco-bs2",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis portable",
+    "dist:dir": "electron-builder --win --dir",
+    "dist:mac": "electron-builder --mac",
+    "dist:mac:dir": "electron-builder --mac --dir"
+  },
+  "devDependencies": {
+    "electron": "^41.7.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.insilicogen.routine.weekly",
+    "productName": "RoutineWeekly",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "주간 업무 일지",
+      "artifactName": "routine-weekly-setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "routine-weekly-portable-${version}.${ext}"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon-mac.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "routine-weekly-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  }
+}

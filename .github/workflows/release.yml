@@ -1,0 +1,120 @@
+name: Release
+
+# 실행 시점
+#   - v* 태그 push  : macOS(arm64/x64) + Windows 빌드 후 GitHub Release 에 첨부
+#   - 수동 실행      : 빌드만 하고 Actions 아티팩트로 남김 (릴리스 없음)
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # 릴리스 생성 및 파일 업로드
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 태그 버전과 package.json 버전이 다르면 파일 이름이 어긋나므로 먼저 막는다.
+  check-version:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 태그 = package.json 버전 확인
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          echo "tag=$TAG package.json=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::태그(v$TAG)와 package.json 버전($PKG)이 다릅니다. package.json 버전을 올리고 다시 태그하세요."
+            exit 1
+          fi
+
+  build-mac:
+    needs: [check-version]
+    # 수동 실행일 때는 check-version 이 스킵되므로 그 경우도 통과시킨다.
+    if: always() && (needs.check-version.result == 'success' || needs.check-version.result == 'skipped')
+    runs-on: macos-latest # Apple Silicon 러너. x64 는 크로스 빌드
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: macOS 빌드 (dmg + zip, arm64 + x64)
+        run: npm run dist:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false" # 미서명 빌드
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  build-win:
+    needs: [check-version]
+    if: always() && (needs.check-version.result == 'success' || needs.check-version.result == 'skipped')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: Windows 빌드 (설치본 + 포터블)
+        run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win
+          path: dist/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-mac, build-win]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - run: ls -la artifacts
+      - name: GitHub Release 생성 및 파일 첨부
+        uses: softprops/action-gh-release@v2
+        with:
+          name: 주간 업무 일지 ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            artifacts/*.dmg
+            artifacts/*.zip
+            artifacts/*.exe
+          body: |
+            ## 설치
+
+            | 환경 | 파일 |
+            | --- | --- |
+            | Mac (Apple Silicon, M1 이후) | `routine-weekly-*-mac-arm64.dmg` |
+            | Mac (Intel) | `routine-weekly-*-mac-x64.dmg` |
+            | Windows 설치본 | `routine-weekly-setup-*.exe` |
+            | Windows 무설치 | `routine-weekly-portable-*.exe` |
+
+            **Mac**: 코드 서명이 없어 처음 열 때 "확인되지 않은 개발자" 또는 "손상되었음" 경고가 뜹니다.
+            dmg 에서 앱을 응용 프로그램 폴더로 끌어 넣은 뒤, 아래 중 하나로 넘기세요.
+
+            - Finder 에서 앱을 **우클릭 > 열기**, 대화상자에서 다시 **열기**
+            - 또는 터미널에서 `xattr -cr /Applications/RoutineWeekly.app`
+
+            **Windows**: SmartScreen 경고가 뜨면 **추가 정보 > 실행**.
+
+            설정과 로그인 정보는 이전 버전 것이 그대로 유지됩니다.
