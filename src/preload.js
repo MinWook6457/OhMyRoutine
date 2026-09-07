@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('api', {
 
   onWindowFocus: (handler) => ipcRenderer.on('window:focused', handler),
   onSetView: (handler) => ipcRenderer.on('view:set', (_event, view) => handler(view)),
+  onFocusToday: (handler) => ipcRenderer.on('view:focusToday', () => handler()),
 
   // 자동 업데이트 (GitHub Releases)
   update: {

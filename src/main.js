@@ -2,7 +2,7 @@
 
 const fs = require('fs')
 const path = require('path')
-const { app, BrowserWindow, Menu, Tray, ipcMain, shell, nativeImage, dialog } = require('electron')
+const { app, BrowserWindow, Menu, Tray, ipcMain, shell, nativeImage, dialog, globalShortcut, nativeTheme } = require('electron')
 
 const api = require('./api')
 const archive = require('./archive')
@@ -11,6 +11,15 @@ const settings = require('./settings')
 const updater = require('./updater')
 
 const isMac = process.platform === 'darwin'
+
+/** 어느 창에서든 앱을 띄우고 오늘 칸에 커서를 두는 전역 단축키. 이미 떠 있고 포커스가 있으면 숨긴다. */
+const GLOBAL_SHORTCUT = 'CommandOrControl+Alt+R'
+
+const THEMES = [
+  ['system', '시스템 설정 따름'],
+  ['light', '라이트'],
+  ['dark', '다크']
+]
 
 let mainWindow = null
 let loginWindow = null
@@ -59,8 +68,28 @@ function windowOptions (config) {
     }
   }
 
-  return { ...options, backgroundColor: '#ffffff', alwaysOnTop: config.alwaysOnTop }
+  return { ...options, backgroundColor: windowBackground(), alwaysOnTop: config.alwaysOnTop }
 }
+
+// ---------------------------------------------------------------- 테마
+
+/**
+ * nativeTheme.themeSource 를 바꾸면 렌더러의 prefers-color-scheme 와 네이티브 대화상자 색이 함께 바뀐다.
+ * 렌더러 CSS 는 미디어 쿼리로 토큰만 갈아끼우므로 별도 IPC 가 필요 없다.
+ */
+function applyTheme (theme) {
+  nativeTheme.themeSource = THEMES.some(([value]) => value === theme) ? theme : 'system'
+}
+
+/** 창이 그려지기 전 잠깐 보이는 배경색. CSS 의 --bg 와 같은 값. */
+function windowBackground () {
+  return nativeTheme.shouldUseDarkColors ? '#1b1d22' : '#ffffff'
+}
+
+nativeTheme.on('updated', () => {
+  if (!mainWindow || mainWindow.isDestroyed() || settings.load().widget) return
+  mainWindow.setBackgroundColor(windowBackground())
+})
 
 function createMainWindow () {
   const config = settings.load()
@@ -125,9 +154,15 @@ function openLoginWindow (target = api) {
       return resolve(false)
     }
 
+    // routine 로그인 페이지는 좁은 창에서도 가운데 정렬되지만, archive 로그인 페이지는 1024px 고정 폭 레이아웃이라
+    // 520px 창에서는 폼 오른쪽이 잘린다. 콘텐츠 폭을 1024 로 맞춰 준다.
+    const size = target === archive
+      ? { width: 1024, height: 700, useContentSize: true }
+      : { width: 520, height: 720 }
+
     loginWindow = new BrowserWindow({
-      width: 520,
-      height: 720,
+      ...size,
+      center: true,
       title: target === archive ? 'inpleARCHIVE 로그인' : 'inpleROUTINE 로그인',
       autoHideMenuBar: true,
       webPreferences: {
@@ -186,7 +221,7 @@ function refreshTrayMenu () {
   const config = settings.load()
 
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: '열기', click: showMainWindow },
+    { label: '열기', accelerator: GLOBAL_SHORTCUT, click: showMainWindow },
     { type: 'separator' },
     {
       label: '바탕화면 위젯 모드',
@@ -208,6 +243,19 @@ function refreshTrayMenu () {
         }
         refreshTrayMenu()
       }
+    },
+    {
+      label: '테마',
+      submenu: THEMES.map(([value, label]) => ({
+        label,
+        type: 'radio',
+        checked: (config.theme || 'system') === value,
+        click: () => {
+          settings.save({ theme: value })
+          applyTheme(value)
+          refreshTrayMenu()
+        }
+      }))
     },
     {
       label: isMac ? '로그인 시 자동 실행' : 'Windows 시작 시 자동 실행',
@@ -374,6 +422,30 @@ function applyAutoLaunch (enabled) {
     : { openAtLogin: enabled, args: ['--hidden'] })
 }
 
+/** 전역 단축키: 숨겨져 있거나 뒤에 있으면 앞으로 띄우고 오늘 칸에 커서, 이미 앞에 있으면 트레이로 숨긴다. */
+function toggleFromShortcut () {
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && mainWindow.isFocused()) {
+    rememberBounds()
+    mainWindow.hide()
+    return
+  }
+  showMainWindow()
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const focusToday = () => mainWindow.webContents.send('view:focusToday')
+  if (mainWindow.webContents.isLoading()) mainWindow.webContents.once('did-finish-load', focusToday)
+  else focusToday()
+}
+
+function registerGlobalShortcut () {
+  try {
+    if (!globalShortcut.register(GLOBAL_SHORTCUT, toggleFromShortcut)) {
+      console.warn(`전역 단축키 ${GLOBAL_SHORTCUT} 등록 실패: 다른 프로그램이 이미 쓰고 있습니다.`)
+    }
+  } catch (error) {
+    console.warn('전역 단축키 등록 실패:', error.message)
+  }
+}
+
 function shouldStartHidden () {
   if (process.argv.includes('--hidden')) return true
   if (!isMac) return false
@@ -392,10 +464,12 @@ app.whenReady().then(() => {
 
   const config = settings.load()
   applyAutoLaunch(config.autoLaunch)
+  applyTheme(config.theme)
 
   createMainWindow()
   buildTray()
   refreshBookmarks()
+  registerGlobalShortcut()
 
   updater.setup({
     onState: (update) => {
@@ -421,6 +495,8 @@ app.on('before-quit', () => {
   quitting = true
   rememberBounds()
 })
+
+app.on('will-quit', () => globalShortcut.unregisterAll())
 
 // ---------------------------------------------------------------- IPC
 

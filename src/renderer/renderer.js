@@ -13,7 +13,9 @@ const state = {
   view: 'week',      // 'week' = 월~금 전체, 'today' = 오늘 하루만, 'log' = 아카이브 로그 작성
   logProject: '',    // 로그 패널에서 마지막으로 고른 프로젝트
   days: [],          // 아래 makeDay() 가 만드는 모양
-  loading: false
+  loading: false,
+  notice: [],        // 이번 주 공지 (문자열 배열)
+  team: { rows: [], myPk: null, selected: null }   // 부서 응답의 구성원 행 전체와 팀 보기에서 고른 user_pk
 }
 
 // 단축키 표기. macOS 는 Cmd(⌘), 그 외는 Ctrl. 실제 판정은 ctrlKey || metaKey 로 둘 다 받는다.
@@ -28,6 +30,11 @@ const el = {
   overlay: document.getElementById('overlay'),
   overlayText: document.getElementById('overlayText'),
   overlayAction: document.getElementById('overlayAction'),
+  notice: document.getElementById('notice'),
+  noticeText: document.getElementById('noticeText'),
+  teamPanel: document.getElementById('teamPanel'),
+  teamList: document.getElementById('teamList'),
+  teamDays: document.getElementById('teamDays'),
   updateToast: document.getElementById('updateToast'),
   updateTitle: document.getElementById('updateTitle'),
   updateText: document.getElementById('updateText'),
@@ -460,6 +467,8 @@ async function loadWeek (options) {
   }
 
   const mine = extractMyWeek(response.result)
+  storeTeam(response.result)
+  renderNotice(response.result)
 
   state.days = DAY_NAMES.map((name, index) => {
     const date = addDays(state.monday, index)
@@ -469,6 +478,7 @@ async function loadWeek (options) {
 
   renderHeader()
   renderDays()
+  if (state.view === 'team') renderTeam()
   hideOverlay()
   state.loading = false
 
@@ -566,19 +576,25 @@ document.getElementById('openWeb').addEventListener('click', () => window.api.op
 
 const WEEK_HINT = document.getElementById('hint').textContent
 const LOG_HINT = `빈 줄 = 단락 / - 항목 = 목록 (Tab 하위 단계) / 1. 항목 = 번호 목록 / # 제목 / ${MOD}+Enter 로 생성`
+const TEAM_HINT = '읽기 전용 · 왼쪽에서 구성원을 고르면 그 사람의 주간 업무가 보인다 · 부서 코드를 바꾸면 다른 부서도 볼 수 있다'
 
 /** 보기 모드에 맞춰 헤더 구성과 카드 배치를 바꾼다. */
 function applyView () {
   const isLog = state.view === 'log'
+  const isTeam = state.view === 'team'
   for (const button of document.querySelectorAll('.seg')) {
     button.classList.toggle('active', button.dataset.view === state.view)
   }
   // '오늘' 모드에서는 주 이동이 의미가 없으므로 감춘다. 로그 패널에서는 주간 도구를 모두 감춘다.
-  document.querySelector('.week-nav').classList.toggle('hidden', state.view !== 'week')
+  // 팀 보기는 주 이동·부서·새로고침은 쓰되 저장 버튼만 감춘다 (읽기 전용).
+  document.querySelector('.week-nav').classList.toggle('hidden', !(state.view === 'week' || isTeam))
   for (const node of document.querySelectorAll('.week-only')) node.classList.toggle('hidden', isLog)
-  el.days.classList.toggle('hidden', isLog)
+  for (const node of document.querySelectorAll('.edit-only')) node.classList.toggle('hidden', isLog || isTeam)
+  el.days.classList.toggle('hidden', isLog || isTeam)
+  el.teamPanel.classList.toggle('hidden', !isTeam)
+  el.notice.classList.toggle('hidden', isLog || !state.notice.length)
   logEl.panel.classList.toggle('hidden', !isLog)
-  document.getElementById('hint').textContent = isLog ? LOG_HINT : WEEK_HINT
+  document.getElementById('hint').textContent = isLog ? LOG_HINT : isTeam ? TEAM_HINT : WEEK_HINT
 }
 
 async function setView (view) {
@@ -589,6 +605,11 @@ async function setView (view) {
 
   if (view === 'log') {
     enterLogPanel()
+    return
+  }
+
+  if (view === 'team') {
+    renderTeam()
     return
   }
 
@@ -1162,6 +1183,131 @@ logEl.login.addEventListener('click', async () => {
   if (ok) enterLogPanel()
 })
 
+// ------------------------------------------------------------ 공지
+
+/** 서버 notice.current_week_notice 를 헤더 아래 한 줄로. 비어 있으면 숨긴다. */
+function renderNotice (result) {
+  state.notice = normalizeLines(result && result.notice && result.notice.current_week_notice)
+  el.noticeText.textContent = state.notice.join('\n')
+  el.notice.classList.toggle('hidden', state.view === 'log' || !state.notice.length)
+}
+
+// ------------------------------------------------------------ 팀 보기 (읽기 전용)
+
+/** 부서 응답의 구성원 행을 전부 들고 있는다. 고른 사람이 응답에 없으면 첫 사람으로. */
+function storeTeam (result) {
+  const rows = (result && Array.isArray(result.weekly_task_logs_list) ? result.weekly_task_logs_list : [])
+    .filter((row) => row && row.user_pk !== undefined)
+  state.team.rows = rows
+  state.team.myPk = result && result.user_data ? result.user_data.pk : null
+  if (!rows.some((row) => row.user_pk === state.team.selected)) {
+    state.team.selected = rows.length ? rows[0].user_pk : null
+  }
+}
+
+function selectTeamMember (pk) {
+  state.team.selected = pk
+  window.api.setSettings({ teamMember: pk })
+  renderTeam()
+}
+
+function renderTeam () {
+  const { rows, myPk, selected } = state.team
+  el.teamList.replaceChildren()
+  el.teamDays.replaceChildren()
+
+  if (!rows.length) {
+    const empty = document.createElement('p')
+    empty.className = 'muted empty'
+    empty.textContent = '이 부서에 구성원 업무가 없습니다. 부서 코드를 확인하세요.'
+    el.teamDays.append(empty)
+    return
+  }
+
+  // 파트(part)별로 묶어 서버 순서대로 나열한다.
+  let lastPart = null
+  for (const row of rows) {
+    const part = row.part || '기타'
+    if (part !== lastPart) {
+      el.teamList.append(spanWith('part', part))
+      lastPart = part
+    }
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'member' + (row.user_pk === selected ? ' active' : '')
+    button.append(spanWith('member-name', row.name || String(row.user_pk)))
+    if (row.user_pk === myPk) button.append(spanWith('me', '나'))
+    button.addEventListener('click', () => selectTeamMember(row.user_pk))
+    el.teamList.append(button)
+  }
+
+  const row = rows.find((item) => item.user_pk === selected) || rows[0]
+  const byDate = new Map()
+  for (const log of row.current_week_task_log || []) {
+    if (log && log.date) byDate.set(log.date, log)
+  }
+
+  const today = toISO(new Date())
+  DAY_NAMES.forEach((name, index) => {
+    const date = addDays(state.monday, index)
+    const log = byDate.get(date)
+    const day = makeDay(date, name, log)
+
+    const card = document.createElement('section')
+    card.className = 'day' + (date === today ? ' today' : '')
+
+    const head = document.createElement('div')
+    head.className = 'day-head'
+    head.append(spanWith('name', name), spanWith('date', date.slice(5)), spanWith('state', row.name || ''))
+
+    const body = document.createElement('div')
+    body.className = 'day-body'
+    body.append(readOnlyBlock('ro-editor', day.text), readOnlyBlock('ro-status', day.statusText))
+
+    const meta = buildMeta(day)
+    card.append(head)
+    if (meta) card.append(meta)
+    card.append(body)
+    el.teamDays.append(card)
+  })
+}
+
+/** 편집 칸과 같은 타이포로 그리는 읽기 전용 블록. */
+function readOnlyBlock (className, text) {
+  const pre = document.createElement('pre')
+  pre.className = className
+  if (text.trim()) {
+    pre.textContent = text
+  } else {
+    pre.append(spanWith('placeholder', className === 'ro-status' ? '' : '(비어 있음)'))
+  }
+  return pre
+}
+
+// ------------------------------------------------------------ 전역 단축키
+
+/** 트레이/전역 단축키로 창을 띄운 뒤 오늘 칸에 커서를 둔다. 다른 주를 보고 있었으면 이번 주로 돌아온다. */
+window.api.onFocusToday(async () => {
+  if (state.view === 'log') {
+    logEl.text.focus()
+    return
+  }
+  if (state.view === 'team') await setView('week')
+
+  const wanted = mondayOf(fromISO(focusDate()))
+  if (state.monday !== wanted) {
+    state.monday = wanted
+    await loadWeek({ preserveDirty: true })
+  }
+
+  const target = focusDate()
+  const day = state.days.find((item) => item.date === target) || state.days.find((item) => item.el)
+  if (!day || !day.el) return
+  const editor = day.el.editor
+  editor.focus()
+  editor.setSelectionRange(editor.value.length, editor.value.length)
+})
+
 // ------------------------------------------------------------ 자동 업데이트 토스트
 
 let dismissedUpdate = null   // "나중에" 를 누른 버전. 이번 실행 동안만 숨긴다
@@ -1209,8 +1355,9 @@ async function start () {
   const config = await window.api.getSettings()
   state.department = config.department || 'bs'
   state.widget = Boolean(config.widget)
-  state.view = ['today', 'log'].includes(config.view) ? config.view : 'week'
+  state.view = ['today', 'log', 'team'].includes(config.view) ? config.view : 'week'
   state.logProject = config.logProject || ''
+  state.team.selected = config.teamMember ?? null
   el.department.value = state.department
 
   if (state.view === 'today') state.monday = mondayOf(fromISO(focusDate()))

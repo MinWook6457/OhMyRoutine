@@ -12,6 +12,7 @@
       <button id="viewWeek" class="seg" data-view="week">주간</button>
       <button id="viewToday" class="seg" data-view="today">오늘</button>
       <button id="viewLog" class="seg" data-view="log" title="아카이브 프로젝트 로그 작성">로그</button>
+      <button id="viewTeam" class="seg" data-view="team" title="부서 구성원의 주간 업무 (읽기 전용)">팀</button>
     </div>
 
     <div class="week-nav">
@@ -31,12 +32,24 @@
       <input id="department" type="text" spellcheck="false" size="4">
     </label>
     <button id="refresh" class="ghost week-only">새로고침</button>
-    <button id="saveAll" class="primary week-only">모두 저장 <kbd>Ctrl+S</kbd></button>
+    <button id="saveAll" class="primary week-only edit-only">모두 저장 <kbd>Ctrl+S</kbd></button>
     <button id="toggleWidget" class="ghost" title="바탕화면 위젯으로 전환">위젯</button>
     <button id="hideWindow" class="ghost hidden" title="트레이로 숨기기">&#10005;</button>
   </header>
 
+  <!-- 주간 공지 (서버 notice.current_week_notice). 비어 있으면 숨긴다 -->
+  <div id="notice" class="notice hidden" role="note">
+    <strong>공지</strong>
+    <span id="noticeText"></span>
+  </div>
+
   <main id="days" class="days"></main>
+
+  <!-- 팀 보기: 부서 구성원 목록 + 선택한 사람의 이번 주 (읽기 전용) -->
+  <section id="teamPanel" class="team-panel hidden">
+    <aside id="teamList" class="team-list"></aside>
+    <div id="teamDays" class="team-days"></div>
+  </section>
 
   <!-- 새 버전 안내 토스트 (창 우측 하단). 내려받기가 끝났거나(Windows 설치본) 새 릴리스가 있을 때(Mac/무설치) 보인다 -->
   <div id="updateToast" class="update-toast hidden" role="status" aria-live="polite">
