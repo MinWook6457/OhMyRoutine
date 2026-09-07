@@ -18,8 +18,8 @@ npm start
 ### Windows
 
 ```
-npm run dist        # dist\routine-weekly-setup-1.1.0.exe (설치본)
-                    # dist\routine-weekly-portable-1.1.0.exe (무설치 단일 exe)
+npm run dist        # dist\routine-weekly-setup-1.2.0.exe (설치본)
+                    # dist\routine-weekly-portable-1.2.0.exe (무설치 단일 exe)
 npm run dist:dir    # dist\win-unpacked\RoutineWeekly.exe (설치 없이 폴더로만)
 ```
 
