@@ -92,6 +92,16 @@
           "path": "/Applications"
         }
       ]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "MinWook6457",
+      "repo": "OhMyRoutine",
+      "releaseType": "release"
     }
-  }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "repository": "github:MinWook6457/OhMyRoutine"
 }

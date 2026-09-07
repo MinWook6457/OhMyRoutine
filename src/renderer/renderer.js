@@ -27,7 +27,12 @@ const el = {
   department: document.getElementById('department'),
   overlay: document.getElementById('overlay'),
   overlayText: document.getElementById('overlayText'),
-  overlayAction: document.getElementById('overlayAction')
+  overlayAction: document.getElementById('overlayAction'),
+  updateToast: document.getElementById('updateToast'),
+  updateTitle: document.getElementById('updateTitle'),
+  updateText: document.getElementById('updateText'),
+  updateAction: document.getElementById('updateAction'),
+  updateDismiss: document.getElementById('updateDismiss')
 }
 
 // ------------------------------------------------------------ 날짜 유틸
@@ -1157,6 +1162,40 @@ logEl.login.addEventListener('click', async () => {
   if (ok) enterLogPanel()
 })
 
+// ------------------------------------------------------------ 자동 업데이트 토스트
+
+let dismissedUpdate = null   // "나중에" 를 누른 버전. 이번 실행 동안만 숨긴다
+
+/** 메인 프로세스가 보내는 업데이트 상태로 창 우측 하단 토스트를 그린다. */
+function renderUpdate (update) {
+  if (!update) return
+  const show = (update.status === 'downloaded' || update.status === 'available') &&
+    update.version !== dismissedUpdate
+  el.updateToast.classList.toggle('hidden', !show)
+  if (!show) return
+
+  if (update.status === 'downloaded') {
+    el.updateTitle.textContent = `v${update.version} 설치 준비 완료`
+    el.updateText.textContent = '지금 재시작하면 바로 적용됩니다. 그냥 두면 다음 종료 때 설치됩니다.'
+    el.updateAction.textContent = '지금 재시작'
+    el.updateAction.onclick = () => window.api.update.install()
+  } else {
+    el.updateTitle.textContent = `새 버전 v${update.version}`
+    el.updateText.textContent = update.canInstall
+      ? '새 버전이 나왔습니다.'
+      : '이 환경은 자동 설치가 되지 않습니다. 직접 내려받아 바꿔 주세요.'
+    el.updateAction.textContent = '다운로드 페이지 열기'
+    el.updateAction.onclick = () => window.api.update.openReleases()
+  }
+
+  el.updateDismiss.onclick = () => {
+    dismissedUpdate = update.version
+    el.updateToast.classList.add('hidden')
+  }
+}
+
+window.api.update.onState(renderUpdate)
+
 // ------------------------------------------------------------ 시작
 
 async function start () {
@@ -1183,6 +1222,7 @@ async function start () {
   document.getElementById('hideWindow').classList.toggle('hidden', !state.widget)
 
   renderHeader()
+  window.api.update.getState().then(renderUpdate)
 
   if (state.view === 'log') enterLogPanel()
 

@@ -38,6 +38,18 @@
 
   <main id="days" class="days"></main>
 
+  <!-- 새 버전 안내 토스트 (창 우측 하단). 내려받기가 끝났거나(Windows 설치본) 새 릴리스가 있을 때(Mac/무설치) 보인다 -->
+  <div id="updateToast" class="update-toast hidden" role="status" aria-live="polite">
+    <div class="update-toast-body">
+      <strong id="updateTitle"></strong>
+      <span id="updateText"></span>
+    </div>
+    <div class="update-toast-actions">
+      <button id="updateAction" class="primary">지금 재시작</button>
+      <button id="updateDismiss" class="ghost" title="이 버전 안내를 이번 실행 동안 숨김">나중에</button>
+    </div>
+  </div>
+
   <!-- 아카이브 프로젝트 로그 작성 패널 -->
   <section id="logPanel" class="log-panel hidden">
     <div id="logForm" class="log-form">

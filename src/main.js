@@ -8,6 +8,7 @@ const api = require('./api')
 const archive = require('./archive')
 const logblocks = require('./logblocks')
 const settings = require('./settings')
+const updater = require('./updater')
 
 const isMac = process.platform === 'darwin'
 
@@ -222,8 +223,99 @@ function refreshTrayMenu () {
     { label: '웹페이지 열기', click: () => shell.openExternal(`${api.BASE}/company/weeklyreport`) },
     { label: '아카이브 즐겨찾기', submenu: bookmarkMenu() },
     { type: 'separator' },
+    updateMenuItem(),
+    { label: `버전 ${app.getVersion()}`, enabled: false },
+    { type: 'separator' },
     { label: '종료', click: () => { quitting = true; app.quit() } }
   ]))
+}
+
+// ---------------------------------------------------------------- 업데이트
+
+/** 트레이 메뉴의 업데이트 항목. 상태에 따라 라벨과 동작이 바뀐다. */
+function updateMenuItem () {
+  const update = updater.current()
+  switch (update.status) {
+    case 'downloaded':
+      return { label: `v${update.version} 설치 후 재시작`, click: installUpdate }
+    case 'available':
+      return { label: `v${update.version} 다운로드 페이지 열기`, click: () => updater.openReleases() }
+    case 'downloading':
+      return { label: `업데이트 내려받는 중… ${update.percent}%`, enabled: false }
+    case 'disabled':
+      return { label: '업데이트 확인 (개발 실행에서는 꺼짐)', enabled: false }
+    default:
+      return { label: '업데이트 확인…', click: checkUpdateInteractive }
+  }
+}
+
+function installUpdate () {
+  quitting = true
+  rememberBounds()
+  return updater.installNow()
+}
+
+/** 사용자가 직접 눌렀을 때는 결과를 대화상자로 보여준다. 정기 검사는 조용히 돈다. */
+async function checkUpdateInteractive () {
+  const result = await updater.checkNow()
+  const update = updater.current()
+  const parent = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() ? mainWindow : undefined
+
+  if (!result.ok) {
+    await dialog.showMessageBox(parent, {
+      type: 'error',
+      title: '업데이트 확인',
+      message: '업데이트를 확인하지 못했습니다.',
+      detail: result.message
+    })
+    return
+  }
+
+  if (!result.available) {
+    await dialog.showMessageBox(parent, {
+      type: 'info',
+      title: '업데이트 확인',
+      message: `최신 버전입니다. (v${app.getVersion()})`
+    })
+    return
+  }
+
+  if (update.canInstall) {
+    // Windows 설치본: 이미 내려받는 중이거나 끝났다.
+    if (update.status === 'downloaded') {
+      const { response } = await dialog.showMessageBox(parent, {
+        type: 'question',
+        buttons: ['지금 재시작', '나중에'],
+        defaultId: 0,
+        cancelId: 1,
+        title: '업데이트 준비 완료',
+        message: `v${result.version} 설치 준비가 끝났습니다.`,
+        detail: '지금 재시작하면 바로 설치됩니다. 나중에 눌러도 다음 종료 때 자동으로 설치됩니다.'
+      })
+      if (response === 0) installUpdate()
+      return
+    }
+    await dialog.showMessageBox(parent, {
+      type: 'info',
+      title: '업데이트 확인',
+      message: `v${result.version} 을 내려받는 중입니다.`,
+      detail: '끝나면 알림이 뜹니다. 계속 사용하셔도 됩니다.'
+    })
+    return
+  }
+
+  const { response } = await dialog.showMessageBox(parent, {
+    type: 'info',
+    buttons: ['다운로드 페이지 열기', '닫기'],
+    defaultId: 0,
+    cancelId: 1,
+    title: '새 버전',
+    message: `v${result.version} 이 나왔습니다. (현재 v${app.getVersion()})`,
+    detail: isMac
+      ? 'Mac 은 코드 서명이 없어 자동 설치가 되지 않습니다. dmg 를 내려받아 덮어쓰세요.'
+      : '무설치 버전은 자동 설치가 되지 않습니다. 새 exe 를 내려받아 바꾸세요.'
+  })
+  if (response === 0) updater.openReleases()
 }
 
 // ---------------------------------------------------------------- 아카이브 즐겨찾기
@@ -293,6 +385,9 @@ function shouldStartHidden () {
 }
 
 app.whenReady().then(() => {
+  // 작업 표시줄 그룹/고정이 설치본 바로가기와 같은 앱으로 묶이도록 AppUserModelId 를 appId 와 맞춘다.
+  if (process.platform === 'win32') app.setAppUserModelId('com.insilicogen.routine.weekly')
+
   api.appSession().setUserAgent(api.USER_AGENT)
 
   const config = settings.load()
@@ -301,6 +396,14 @@ app.whenReady().then(() => {
   createMainWindow()
   buildTray()
   refreshBookmarks()
+
+  updater.setup({
+    onState: (update) => {
+      refreshTrayMenu()
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update:state', update)
+    },
+    beforeQuit: () => { quitting = true }
+  })
 
   if (shouldStartHidden() && mainWindow) {
     mainWindow.once('ready-to-show', () => mainWindow.hide())
@@ -361,6 +464,13 @@ ipcMain.handle('api:saveDay', async (_event, { date, patch }) => {
 })
 
 ipcMain.handle('app:openWeb', () => shell.openExternal(`${api.BASE}/company/weeklyreport`))
+
+// ---------------------------------------------------------------- IPC: 업데이트
+
+ipcMain.handle('update:state', () => updater.current())
+ipcMain.handle('update:check', () => checkUpdateInteractive())
+ipcMain.handle('update:install', () => installUpdate())
+ipcMain.handle('update:openReleases', () => updater.openReleases())
 
 // ---------------------------------------------------------------- IPC: 아카이브
 

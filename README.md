@@ -76,7 +76,28 @@ git push origin main --tags
 - 릴리스 본문에 Gatekeeper 우회 방법(우클릭 > 열기 / `xattr -cr`)이 자동으로 적힌다
 - Actions 탭에서 **Run workflow** 로 수동 실행하면 릴리스 없이 빌드만 하고 아티팩트(14일 보관)로 남긴다.
   아티팩트는 GitHub 로그인이 필요하므로 배포용으로는 태그 릴리스를 쓴다
-- 저장소가 private 이면 Releases 도 저장소 권한이 있는 사람만 받을 수 있다
+- 저장소가 private 이면 Releases 도 저장소 권한이 있는 사람만 받을 수 있다.
+  **자동 업데이트도 마찬가지로 막힌다** (앱이 토큰 없이 latest.yml 을 못 받는다). 자동 업데이트를 쓰려면 저장소를 public 으로 두거나,
+  private 을 유지해야 하면 별도의 public 릴리스 저장소나 사내 정적 서버(`provider: generic`)로 publish 설정을 바꿔야 한다
+
+### 자동 업데이트 (electron-updater)
+
+설치된 앱은 시작 15초 뒤와 이후 4시간마다 Releases 의 `latest.yml`(Windows) / `latest-mac.yml`(Mac) 을 읽어
+새 버전이 있는지 본다. 판정은 **태그 버전 > 실행 중인 버전** 이므로 릴리스마다 `package.json` 버전을 꼭 올려야 한다.
+
+| 환경 | 동작 |
+| --- | --- |
+| Windows 설치본 (`-setup.exe`) | 백그라운드 다운로드 → 앱 안 우측 하단 토스트 + 트레이 메뉴 (운영체제 알림은 쓰지 않음). "지금 재시작" 또는 다음 종료 때 조용히 설치 후 재실행 |
+| Windows 무설치 (`-portable.exe`) | 실행 중인 exe 를 스스로 못 바꾸므로 토스트 안내 + Releases 페이지 열기만 |
+| Mac (dmg/zip) | 코드 서명이 없어 Squirrel.Mac 이 설치를 거부하므로 토스트 안내 + Releases 페이지 열기만. Apple Developer 서명·공증을 붙이면 `src/updater.js` 의 `canInstall` 조건만 풀어 자동 설치로 바꿀 수 있다 |
+| `npm start` (개발 실행) | 검사하지 않음 |
+
+- 트레이 메뉴 **업데이트 확인…** 으로 바로 확인할 수 있고, 결과는 대화상자로 보여준다
+- 검사 실패(오프라인 등)는 사용자에게 알리지 않고 `%APPDATA%\routine-weekly\update.log` (Mac: `~/Library/Application Support/routine-weekly/update.log`) 에만 남긴다
+- 관련 파일: `src/updater.js` (검사/다운로드/상태), `src/main.js` (트레이 메뉴·대화상자·IPC), `src/renderer/renderer.js` 의 `renderUpdate` (우측 하단 토스트)
+- 빌드 설정: `package.json` 의 `build.publish` (GitHub provider). 이 설정이 있어야 electron-builder 가 `latest*.yml` 과 앱 안의 `app-update.yml` 을 만든다.
+  업로드는 워크플로의 release 잡이 하므로 빌드 자체는 `--publish never` 로 돈다
+- 릴리스는 **draft 나 pre-release 가 아니어야** 앱이 인식한다 (워크플로가 만드는 릴리스는 기본이 정식 릴리스)
 
 ## 사용법
 

@@ -24,6 +24,15 @@ contextBridge.exposeInMainWorld('api', {
   onWindowFocus: (handler) => ipcRenderer.on('window:focused', handler),
   onSetView: (handler) => ipcRenderer.on('view:set', (_event, view) => handler(view)),
 
+  // 자동 업데이트 (GitHub Releases)
+  update: {
+    getState: () => ipcRenderer.invoke('update:state'),
+    check: () => ipcRenderer.invoke('update:check'),
+    install: () => ipcRenderer.invoke('update:install'),
+    openReleases: () => ipcRenderer.invoke('update:openReleases'),
+    onState: (handler) => ipcRenderer.on('update:state', (_event, state) => handler(state))
+  },
+
   // 아카이브 (프로젝트 로그)
   archive: {
     check: () => ipcRenderer.invoke('archive:check'),
