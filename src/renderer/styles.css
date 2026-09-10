@@ -382,7 +382,8 @@ body.widget::before {
   border-radius: var(--radius-control);
   flex: none;
 }
-.segmented .seg {
+.segmented .seg,
+.segmented .scope {
   height: calc(var(--control-h) - 6px);
   padding: 0 12px;
   border: 0;
@@ -391,8 +392,10 @@ body.widget::before {
   color: var(--muted);
   font-size: 14px;
 }
-.segmented .seg:hover { background: transparent; color: var(--text-body); }
-.segmented .seg.active {
+.segmented .seg:hover,
+.segmented .scope:hover { background: transparent; color: var(--text-body); }
+.segmented .seg.active,
+.segmented .scope.active {
   background: var(--bg);
   color: var(--primary);
 }
@@ -710,3 +713,39 @@ body.widget .log-row .field:not(.grow) { display: none; }
 }
 
 body.widget .update-toast { right: 8px; bottom: 48px; }
+
+/* ------------------------------------------------------------- 연락처 QR */
+
+.contacts-box {
+  width: 360px;
+  padding: 24px 28px 20px;
+}
+.contacts-box h2 { margin: 0 0 14px; font-size: 18px; }
+.contacts-scope { margin-bottom: 16px; }
+.contacts-body {
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.contacts-qr {
+  width: 256px;
+  height: 256px;
+  image-rendering: pixelated;
+  border-radius: 12px;
+  background: #fff;   /* 다크 모드에서도 QR 은 흰 바탕이어야 카메라가 읽는다 */
+  padding: 8px;
+  box-sizing: border-box;
+}
+.contacts-text { margin: 0; color: var(--text-body); white-space: pre-line; }
+.contacts-text.error { color: var(--danger); }
+.contacts-url {
+  font-size: 11px;
+  color: var(--muted);
+  user-select: all;
+  word-break: break-all;
+}
+.contacts-help { margin: 12px 0 14px; font-size: 12px; line-height: 1.5; }
+.contacts-actions { display: flex; gap: 8px; justify-content: center; }

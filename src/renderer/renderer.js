@@ -590,6 +590,7 @@ function applyView () {
   document.querySelector('.week-nav').classList.toggle('hidden', !(state.view === 'week' || isTeam))
   for (const node of document.querySelectorAll('.week-only')) node.classList.toggle('hidden', isLog)
   for (const node of document.querySelectorAll('.edit-only')) node.classList.toggle('hidden', isLog || isTeam)
+  for (const node of document.querySelectorAll('.team-only')) node.classList.toggle('hidden', !isTeam)
   el.days.classList.toggle('hidden', isLog || isTeam)
   el.teamPanel.classList.toggle('hidden', !isTeam)
   el.notice.classList.toggle('hidden', isLog || !state.notice.length)
@@ -1380,5 +1381,119 @@ async function start () {
     setStatus('로그인 필요')
   }
 }
+
+// ------------------------------------------------------------ 연락처 QR
+
+const contactsEl = {
+  modal: document.getElementById('contactsModal'),
+  scope: document.querySelector('#contactsModal .contacts-scope'),
+  qr: document.getElementById('contactsQrImage'),
+  text: document.getElementById('contactsText'),
+  url: document.getElementById('contactsUrl'),
+  retry: document.getElementById('contactsRetry'),
+  close: document.getElementById('contactsClose')
+}
+const contactsState = { scope: 'team', open: false, timer: null, expiresAt: 0 }
+
+function contactsScopeLabel () {
+  return contactsState.scope === 'team' ? `${state.department.toUpperCase()} 부서` : '전 직원'
+}
+
+function renderContactsScope () {
+  for (const button of contactsEl.scope.querySelectorAll('.scope')) {
+    button.classList.toggle('active', button.dataset.scope === contactsState.scope)
+  }
+}
+
+function setContactsMessage (text, isError) {
+  contactsEl.text.textContent = text
+  contactsEl.text.classList.toggle('error', Boolean(isError))
+  contactsEl.retry.classList.toggle('hidden', !isError)
+}
+
+function stopContactsTimer () {
+  if (contactsState.timer) clearInterval(contactsState.timer)
+  contactsState.timer = null
+}
+
+/** 남은 시간을 1초마다 갱신하고, 만료되면 서버가 이미 내려갔으니 안내만 바꾼다. */
+function startContactsTimer (count, skipped) {
+  stopContactsTimer()
+  const tick = () => {
+    const left = Math.max(0, contactsState.expiresAt - Date.now())
+    if (!left) {
+      stopContactsTimer()
+      contactsEl.qr.classList.add('hidden')
+      contactsEl.url.classList.add('hidden')
+      setContactsMessage('공유 시간이 끝났습니다. 다시 시도를 누르면 새 QR 을 만듭니다.', true)
+      return
+    }
+    const m = Math.floor(left / 60000)
+    const s = String(Math.floor((left % 60000) / 1000)).padStart(2, '0')
+    const skippedText = skipped ? `\n연락처가 없는 ${skipped}명은 빠졌습니다.` : ''
+    setContactsMessage(`${contactsScopeLabel()} ${count}명 · ${m}:${s} 뒤 만료${skippedText}`, false)
+  }
+  tick()
+  contactsState.timer = setInterval(tick, 1000)
+}
+
+async function loadContacts () {
+  stopContactsTimer()
+  contactsEl.qr.classList.add('hidden')
+  contactsEl.url.classList.add('hidden')
+  setContactsMessage('조직 현황을 불러오는 중…', false)
+
+  const response = await window.api.contacts.start(contactsState.scope, state.department, contactsScopeLabel(), state.team.myPk)
+  if (!contactsState.open) { window.api.contacts.stop(); return }   // 기다리는 동안 닫았으면 바로 내린다
+
+  if (!response.ok) {
+    if (response.code === 'AUTH_REQUIRED') {
+      closeContacts()
+      showOverlay('로그인이 필요합니다.', '로그인', doLogin)
+      return
+    }
+    setContactsMessage(response.message || '연락처를 만들지 못했습니다.', true)
+    return
+  }
+
+  contactsEl.qr.src = response.qr
+  contactsEl.qr.classList.remove('hidden')
+  contactsEl.url.textContent = response.url
+  contactsEl.url.classList.remove('hidden')
+  contactsState.expiresAt = response.expiresAt
+  startContactsTimer(response.count, response.skipped)
+}
+
+function openContacts () {
+  contactsState.open = true
+  renderContactsScope()
+  contactsEl.modal.classList.remove('hidden')
+  loadContacts()
+}
+
+function closeContacts () {
+  contactsState.open = false
+  stopContactsTimer()
+  contactsEl.modal.classList.add('hidden')
+  contactsEl.qr.removeAttribute('src')
+  window.api.contacts.stop()
+}
+
+document.getElementById('contactsQr').addEventListener('click', openContacts)
+contactsEl.close.addEventListener('click', closeContacts)
+contactsEl.retry.addEventListener('click', loadContacts)
+contactsEl.scope.addEventListener('click', (event) => {
+  const button = event.target.closest('.scope')
+  if (!button || button.dataset.scope === contactsState.scope) return
+  contactsState.scope = button.dataset.scope
+  renderContactsScope()
+  loadContacts()
+})
+contactsEl.modal.addEventListener('click', (event) => {
+  if (event.target === contactsEl.modal) closeContacts()
+})
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && contactsState.open) closeContacts()
+})
 
 start()

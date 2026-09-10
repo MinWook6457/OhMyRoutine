@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; font-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; font-src 'self'; img-src 'self' data:;">
   <title>주간 업무 일지</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -32,6 +32,7 @@
       <input id="department" type="text" spellcheck="false" size="4">
     </label>
     <button id="refresh" class="ghost week-only">새로고침</button>
+    <button id="contactsQr" class="ghost team-only hidden" title="구성원 연락처를 휴대폰 전화번호부에 넣는 QR">연락처 QR</button>
     <button id="saveAll" class="primary week-only edit-only">모두 저장 <kbd>Ctrl+S</kbd></button>
     <button id="toggleWidget" class="ghost" title="바탕화면 위젯으로 전환">위젯</button>
     <button id="hideWindow" class="ghost hidden" title="트레이로 숨기기">&#10005;</button>
@@ -50,6 +51,27 @@
     <aside id="teamList" class="team-list"></aside>
     <div id="teamDays" class="team-days"></div>
   </section>
+
+  <!-- 연락처 QR: 구성원 vCard 를 LAN 으로 공유하는 주소를 QR 로 보여준다 -->
+  <div id="contactsModal" class="overlay hidden" role="dialog" aria-labelledby="contactsTitle">
+    <div class="overlay-box contacts-box">
+      <h2 id="contactsTitle">연락처 QR</h2>
+      <div class="contacts-scope segmented" role="group" aria-label="대상 범위">
+        <button type="button" class="scope active" data-scope="team">내 부서</button>
+        <button type="button" class="scope" data-scope="all">전 직원</button>
+      </div>
+      <div id="contactsBody" class="contacts-body">
+        <img id="contactsQrImage" class="contacts-qr hidden" alt="연락처 등록 페이지 QR">
+        <p id="contactsText" class="contacts-text"></p>
+        <code id="contactsUrl" class="contacts-url hidden"></code>
+      </div>
+      <p class="contacts-help muted">휴대폰이 이 PC 와 같은 Wi-Fi 에 있어야 합니다. 찍으면 안내 페이지가 열리고 "전체 연락처 저장" 한 번으로 모두 들어갑니다.</p>
+      <div class="contacts-actions">
+        <button id="contactsRetry" class="ghost hidden">다시 시도</button>
+        <button id="contactsClose" class="primary">닫기</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 새 버전 안내 토스트 (창 우측 하단). 내려받기가 끝났거나(Windows 설치본) 새 릴리스가 있을 때(Mac/무설치) 보인다 -->
   <div id="updateToast" class="update-toast hidden" role="status" aria-live="polite">

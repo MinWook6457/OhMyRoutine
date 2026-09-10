@@ -46,6 +46,13 @@ contextBridge.exposeInMainWorld('api', {
     openProject: (name) => ipcRenderer.invoke('archive:openProject', name)
   },
 
+  // 연락처 QR (.vcf 를 LAN 으로 공유)
+  contacts: {
+    start: (scope, department, label, myPk) => ipcRenderer.invoke('contacts:start', { scope, department, label, myPk }),
+    stop: () => ipcRenderer.invoke('contacts:stop'),
+    state: () => ipcRenderer.invoke('contacts:state')
+  },
+
   // 트리 <-> 평문 변환과 글머리 기호 헬퍼
   treeToText: (nodes) => tree.treeToText(nodes),
   textToTree: (text) => tree.textToTree(text),

@@ -6,6 +6,7 @@ const { app, BrowserWindow, Menu, Tray, ipcMain, shell, nativeImage, dialog, glo
 
 const api = require('./api')
 const archive = require('./archive')
+const contacts = require('./contacts')
 const logblocks = require('./logblocks')
 const settings = require('./settings')
 const updater = require('./updater')
@@ -494,6 +495,7 @@ app.on('activate', showMainWindow)
 app.on('before-quit', () => {
   quitting = true
   rememberBounds()
+  contacts.stop()
 })
 
 app.on('will-quit', () => globalShortcut.unregisterAll())
@@ -540,6 +542,45 @@ ipcMain.handle('api:saveDay', async (_event, { date, patch }) => {
 })
 
 ipcMain.handle('app:openWeb', () => shell.openExternal(`${api.BASE}/company/weeklyreport`))
+
+// ---------------------------------------------------------------- IPC: 연락처 QR
+
+/**
+ * 조직 현황 API 로 구성원을 받아 .vcf 공유 서버를 열고 QR 을 돌려준다.
+ * 응답은 result.organization_list[] 이고 각 행에 department(부서 식별자, 예: 'BS') 가 있다.
+ * scope 'team' 이면 앱의 부서 설정과 department 가 같은 사람만(대소문자 무시), 'all' 이면 전 직원.
+ */
+ipcMain.handle('contacts:start', async (_event, { scope, department, label, myPk }) => {
+  try {
+    const [{ members, raw }, me] = await Promise.all([api.getOrganization(), api.getProfile()])
+    dumpArchive('organization', raw)   // 응답 모양 확인용 (last-archive-organization.json)
+    if (!members.length) throw new Error('조직 현황 응답에서 구성원 목록을 찾지 못했습니다.')
+
+    // 본인은 뺀다. 프로필의 username 과 주간 일지 user_data.pk 둘 중 하나라도 맞으면 본인으로 본다.
+    const isMe = (m) => (me.username && String(m.username) === me.username) || (myPk != null && m.pk === myPk)
+    const others = members.filter((m) => !isMe(m))
+    let picked = others
+    if (scope === 'team') {
+      const wanted = String(department || '').trim().toLowerCase()
+      picked = others.filter((m) => String(m.department || '').trim().toLowerCase() === wanted)
+      if (!picked.length) {
+        const known = [...new Set(members.map((m) => m.department).filter(Boolean))].sort().join(', ')
+        throw new Error(`조직 현황에 '${department}' 부서가 없습니다. 있는 부서: ${known}`)
+      }
+    }
+    const result = await contacts.start(picked, label || (scope === 'team' ? '부서' : '전 직원'))
+    return { ok: true, ...result, total: members.length }
+  } catch (error) {
+    return { ok: false, code: error.code || null, message: error.message }
+  }
+})
+
+ipcMain.handle('contacts:stop', async () => {
+  await contacts.stop()
+  return { ok: true }
+})
+
+ipcMain.handle('contacts:state', () => contacts.state())
 
 // ---------------------------------------------------------------- IPC: 업데이트
 
