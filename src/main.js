@@ -558,7 +558,9 @@ ipcMain.handle('contacts:start', async (_event, { scope, department, label, myPk
 
     // 본인은 뺀다. 프로필의 username 과 주간 일지 user_data.pk 둘 중 하나라도 맞으면 본인으로 본다.
     const isMe = (m) => (me.username && String(m.username) === me.username) || (myPk != null && m.pk === myPk)
-    const others = members.filter((m) => !isMe(m))
+    // 프리랜서(외부 인력)도 뺀다. sub_text 는 "직급 / 직무 / 부서" 꼴이고 프리랜서는 직급 칸에 그대로 적혀 온다.
+    const isFreelancer = (m) => String(m.sub_text || m.position || '').split('/')[0].trim() === '프리랜서'
+    const others = members.filter((m) => !isMe(m) && !isFreelancer(m))
     let picked = others
     if (scope === 'team') {
       const wanted = String(department || '').trim().toLowerCase()
