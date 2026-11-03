@@ -10,7 +10,7 @@ const state = {
   monday: mondayOf(new Date()),
   department: 'bs',
   widget: false,
-  view: 'week',      // 'week' = 월~금 전체, 'today' = 오늘 하루만, 'log' = 아카이브 로그 작성
+  view: 'week',      // 'week' = 월~금 전체, 'today' = 오늘 하루만, 'log' = 아카이브 로그 작성, 'team' = 팀 보기, 'car' = 차량 예약 달력
   logProject: '',    // 로그 패널에서 마지막으로 고른 프로젝트
   days: [],          // 아래 makeDay() 가 만드는 모양
   loading: false,
@@ -577,25 +577,29 @@ document.getElementById('openWeb').addEventListener('click', () => window.api.op
 const WEEK_HINT = document.getElementById('hint').textContent
 const LOG_HINT = `빈 줄 = 단락 / - 항목 = 목록 (Tab 하위 단계) / 1. 항목 = 번호 목록 / # 제목 / ${MOD}+Enter 로 생성`
 const TEAM_HINT = '읽기 전용 · 왼쪽에서 구성원을 고르면 그 사람의 주간 업무가 보인다 · 부서 코드를 바꾸면 다른 부서도 볼 수 있다'
+const CAR_HINT = '읽기 전용 · 아카이브 차량예약신청 위키의 신청 현황 표 · 날짜를 누르면 오른쪽에 상세 · 예약은 "웹에서 예약" 으로 위키에 직접 적는다'
 
 /** 보기 모드에 맞춰 헤더 구성과 카드 배치를 바꾼다. */
 function applyView () {
   const isLog = state.view === 'log'
   const isTeam = state.view === 'team'
+  const isCar = state.view === 'car'
   for (const button of document.querySelectorAll('.seg')) {
     button.classList.toggle('active', button.dataset.view === state.view)
   }
   // '오늘' 모드에서는 주 이동이 의미가 없으므로 감춘다. 로그 패널에서는 주간 도구를 모두 감춘다.
   // 팀 보기는 주 이동·부서·새로고침은 쓰되 저장 버튼만 감춘다 (읽기 전용).
   document.querySelector('.week-nav').classList.toggle('hidden', !(state.view === 'week' || isTeam))
-  for (const node of document.querySelectorAll('.week-only')) node.classList.toggle('hidden', isLog)
-  for (const node of document.querySelectorAll('.edit-only')) node.classList.toggle('hidden', isLog || isTeam)
+  // 차량 달력은 자기 툴바(달 이동·새로고침)를 따로 가지므로 주간 도구를 모두 감춘다.
+  for (const node of document.querySelectorAll('.week-only')) node.classList.toggle('hidden', isLog || isCar)
+  for (const node of document.querySelectorAll('.edit-only')) node.classList.toggle('hidden', isLog || isTeam || isCar)
   for (const node of document.querySelectorAll('.team-only')) node.classList.toggle('hidden', !isTeam)
-  el.days.classList.toggle('hidden', isLog || isTeam)
+  el.days.classList.toggle('hidden', isLog || isTeam || isCar)
   el.teamPanel.classList.toggle('hidden', !isTeam)
-  el.notice.classList.toggle('hidden', isLog || !state.notice.length)
+  el.notice.classList.toggle('hidden', isLog || isCar || !state.notice.length)
   logEl.panel.classList.toggle('hidden', !isLog)
-  document.getElementById('hint').textContent = isLog ? LOG_HINT : isTeam ? TEAM_HINT : WEEK_HINT
+  carEl.panel.classList.toggle('hidden', !isCar)
+  document.getElementById('hint').textContent = isLog ? LOG_HINT : isTeam ? TEAM_HINT : isCar ? CAR_HINT : WEEK_HINT
 }
 
 async function setView (view) {
@@ -611,6 +615,11 @@ async function setView (view) {
 
   if (view === 'team') {
     renderTeam()
+    return
+  }
+
+  if (view === 'car') {
+    enterCarPanel()
     return
   }
 
@@ -660,6 +669,7 @@ window.api.onSetView((view) => {
 // 창을 다시 활성화하면 웹에서 바뀐 내용을 반영한다 (로컬 수정본은 보존).
 window.api.onWindowFocus(() => {
   if (!state.loading) loadWeek({ silent: true, preserveDirty: true })
+  if (state.view === 'car') loadCars({ silent: true, maxAge: CAR_REFRESH_AGE })
 })
 
 // ------------------------------------------------------------ 아카이브 로그 패널
@@ -1190,7 +1200,7 @@ logEl.login.addEventListener('click', async () => {
 function renderNotice (result) {
   state.notice = normalizeLines(result && result.notice && result.notice.current_week_notice)
   el.noticeText.textContent = state.notice.join('\n')
-  el.notice.classList.toggle('hidden', state.view === 'log' || !state.notice.length)
+  el.notice.classList.toggle('hidden', state.view === 'log' || state.view === 'car' || !state.notice.length)
 }
 
 // ------------------------------------------------------------ 팀 보기 (읽기 전용)
@@ -1285,6 +1295,203 @@ function readOnlyBlock (className, text) {
   return pre
 }
 
+// ------------------------------------------------------------ 차량 예약 달력 (읽기 전용)
+
+const CAR_WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
+const CAR_NAMES = ['아반떼', '투싼']
+const CAR_REFRESH_AGE = 60 * 1000   // 창 포커스 때 이보다 오래된 목록만 다시 받는다
+
+const carEl = {
+  panel: document.getElementById('carPanel'),
+  view: document.getElementById('carView'),
+  auth: document.getElementById('carAuth'),
+  login: document.getElementById('carLogin'),
+  month: document.getElementById('carMonth'),
+  meta: document.getElementById('carMeta'),
+  grid: document.getElementById('carGrid'),
+  detail: document.getElementById('carDetail')
+}
+
+const carState = {
+  month: toISO(new Date()).slice(0, 7),   // 'YYYY-MM'
+  selected: toISO(new Date()),
+  list: [],            // main 의 vehicles.parseReservations() 결과
+  byDate: new Map(),   // 'YYYY-MM-DD' -> 그날 걸친 예약[]
+  loadedAt: 0,
+  loading: false,
+  meta: ''
+}
+
+function carClass (car) {
+  return car === '아반떼' ? 'avante' : car === '투싼' ? 'tucson' : 'other'
+}
+
+/** 여러 날 걸친 예약은 걸친 날마다 넣는다. */
+function indexCars (list) {
+  const byDate = new Map()
+  for (const item of list) {
+    for (let date = item.start; date <= item.end; date = addDays(date, 1)) {
+      if (!byDate.has(date)) byDate.set(date, [])
+      byDate.get(date).push(item)
+    }
+  }
+  return byDate
+}
+
+async function enterCarPanel () {
+  renderCars()
+  await loadCars({ maxAge: CAR_REFRESH_AGE })
+}
+
+async function loadCars ({ silent = false, maxAge = 0 } = {}) {
+  if (carState.loading) return
+  if (maxAge && carState.loadedAt && Date.now() - carState.loadedAt < maxAge) return
+  carState.loading = true
+  if (!silent) setStatus('차량 예약 현황 불러오는 중…')
+  try {
+    const res = await window.api.archive.vehicles()
+    if (!res.ok) {
+      const needLogin = res.code === 'AUTH_REQUIRED'
+      carEl.auth.classList.toggle('hidden', !needLogin)
+      carEl.view.classList.toggle('hidden', needLogin)
+      if (!silent || needLogin) setStatus(needLogin ? '아카이브 로그인 필요' : res.message, needLogin ? undefined : 'error')
+      return
+    }
+    carEl.auth.classList.add('hidden')
+    carEl.view.classList.remove('hidden')
+    carState.list = res.reservations || []
+    carState.byDate = indexCars(carState.list)
+    carState.loadedAt = Date.now()
+    carState.meta = res.modifiedBy ? `위키 수정 ${res.modifiedBy} · ${res.modifiedAt}` : ''
+    renderCars()
+    if (!silent) setStatus(`차량 예약 ${carState.list.length}건`, 'ok')
+  } finally {
+    carState.loading = false
+  }
+}
+
+function shiftCarMonth (delta) {
+  const [y, m] = carState.month.split('-').map(Number)
+  carState.month = toISO(new Date(y, m - 1 + delta, 1)).slice(0, 7)
+  renderCars()
+}
+
+function selectCarDate (date) {
+  carState.selected = date
+  carState.month = date.slice(0, 7)
+  renderCars()
+}
+
+/** 예약 한 건의 시각 범위. 여러 날이면 날짜도 붙인다. */
+function carTimeRange (item) {
+  const at = (date, time) => ((item.start === item.end ? '' : date.slice(5).replace('-', '/') + ' ') + (time || '')).trim()
+  const from = at(item.start, item.startTime)
+  const to = at(item.end, item.endTime)
+  return from || to ? `${from || '?'} – ${to || '?'}` : '시각 미기재'
+}
+
+function renderCars () {
+  const [y, m] = carState.month.split('-').map(Number)
+  carEl.month.textContent = `${y}년 ${m}월`
+  carEl.meta.textContent = carState.meta
+
+  // 달 첫날이 든 주의 일요일부터 6주를 그린다.
+  const first = new Date(y, m - 1, 1)
+  const gridStart = addDays(toISO(first), -first.getDay())
+  const today = toISO(new Date())
+
+  carEl.grid.replaceChildren()
+  CAR_WEEKDAYS.forEach((name, index) => {
+    carEl.grid.append(spanWith('car-weekday' + (index === 0 ? ' sun' : index === 6 ? ' sat' : ''), name))
+  })
+
+  for (let i = 0; i < 42; i++) {
+    const date = addDays(gridStart, i)
+    const cell = document.createElement('button')
+    cell.type = 'button'
+    cell.className = 'car-cell' +
+      (date.slice(0, 7) !== carState.month ? ' outside' : '') +
+      (date === today ? ' today' : '') +
+      (date === carState.selected ? ' selected' : '') +
+      (i % 7 === 0 ? ' sun' : i % 7 === 6 ? ' sat' : '')
+    cell.append(spanWith('car-day', String(Number(date.slice(8)))))
+
+    for (const item of carState.byDate.get(date) || []) {
+      const lead = item.start !== date ? '↳' : item.startTime || ''
+      const chip = spanWith('car-chip ' + carClass(item.car), `${lead} ${item.car || '미지정'} ${item.driver}`.trim())
+      chip.title = `${item.car || '차량 미지정'} · ${item.driver}\n${carTimeRange(item)}\n${item.place}\n${item.purpose}`
+      cell.append(chip)
+    }
+
+    cell.addEventListener('click', () => selectCarDate(date))
+    carEl.grid.append(cell)
+  }
+
+  renderCarDetail()
+}
+
+function renderCarDetail () {
+  const date = carState.selected
+  const items = carState.byDate.get(date) || []
+  carEl.detail.replaceChildren()
+
+  const [y, m, d] = date.split('-').map(Number)
+  carEl.detail.append(spanWith('car-detail-date', `${m}월 ${d}일 (${CAR_WEEKDAYS[new Date(y, m - 1, d).getDay()]})`))
+
+  // 차량별로 비었는지 한 줄로. 미지정(차량 열이 없던 지난 표) 예약은 어느 차인지 몰라 따지지 않는다.
+  const free = document.createElement('div')
+  free.className = 'car-free'
+  for (const car of CAR_NAMES) {
+    const count = items.filter((item) => item.car === car).length
+    free.append(spanWith('car-chip ' + (count ? carClass(car) : 'free'), count ? `${car} 예약 ${count}건` : `${car} 비어 있음`))
+  }
+  carEl.detail.append(free)
+
+  if (!items.length) {
+    carEl.detail.append(spanWith('muted empty', '이 날 예약이 없습니다.'))
+    return
+  }
+
+  for (const item of items) {
+    const card = document.createElement('div')
+    card.className = 'car-item ' + carClass(item.car)
+
+    const title = document.createElement('div')
+    title.className = 'car-item-title'
+    title.append(spanWith('car-badge ' + carClass(item.car), item.car || '미지정'), spanWith('car-time', carTimeRange(item)))
+    card.append(title)
+
+    const rows = [
+      ['운전자', item.driver],
+      ['출장지', item.place],
+      ['목적', item.purpose],
+      ['주차', item.parking],
+      ['차키 인수', item.keeper],
+      ['신청일', item.requested]
+    ]
+    const list = document.createElement('dl')
+    for (const [label, value] of rows) {
+      if (!value || value === '-') continue
+      const dt = document.createElement('dt')
+      dt.textContent = label
+      const dd = document.createElement('dd')
+      dd.textContent = value
+      list.append(dt, dd)
+    }
+    card.append(list)
+    carEl.detail.append(card)
+  }
+}
+
+document.getElementById('carPrev').addEventListener('click', () => shiftCarMonth(-1))
+document.getElementById('carNext').addEventListener('click', () => shiftCarMonth(1))
+document.getElementById('carThisMonth').addEventListener('click', () => selectCarDate(toISO(new Date())))
+document.getElementById('carRefresh').addEventListener('click', () => loadCars())
+document.getElementById('carOpenWeb').addEventListener('click', () => window.api.archive.openVehicles())
+carEl.login.addEventListener('click', async () => {
+  if (await window.api.archive.login()) loadCars()
+})
+
 // ------------------------------------------------------------ 전역 단축키
 
 /** 트레이/전역 단축키로 창을 띄운 뒤 오늘 칸에 커서를 둔다. 다른 주를 보고 있었으면 이번 주로 돌아온다. */
@@ -1293,7 +1500,7 @@ window.api.onFocusToday(async () => {
     logEl.text.focus()
     return
   }
-  if (state.view === 'team') await setView('week')
+  if (state.view === 'team' || state.view === 'car') await setView('week')
 
   const wanted = mondayOf(fromISO(focusDate()))
   if (state.monday !== wanted) {
@@ -1356,7 +1563,7 @@ async function start () {
   const config = await window.api.getSettings()
   state.department = config.department || 'bs'
   state.widget = Boolean(config.widget)
-  state.view = ['today', 'log', 'team'].includes(config.view) ? config.view : 'week'
+  state.view = ['today', 'log', 'team', 'car'].includes(config.view) ? config.view : 'week'
   state.logProject = config.logProject || ''
   state.team.selected = config.teamMember ?? null
   el.department.value = state.department
@@ -1373,6 +1580,7 @@ async function start () {
   window.api.update.getState().then(renderUpdate)
 
   if (state.view === 'log') enterLogPanel()
+  if (state.view === 'car') enterCarPanel()
 
   if (await window.api.checkAuth()) {
     await loadWeek({ silent: state.view === 'log' })

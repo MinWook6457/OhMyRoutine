@@ -13,6 +13,7 @@
       <button id="viewToday" class="seg" data-view="today">오늘</button>
       <button id="viewLog" class="seg" data-view="log" title="아카이브 프로젝트 로그 작성">로그</button>
       <button id="viewTeam" class="seg" data-view="team" title="부서 구성원의 주간 업무 (읽기 전용)">팀</button>
+      <button id="viewCar" class="seg" data-view="car" title="아카이브 차량예약신청 위키의 예약 현황 (읽기 전용)">차량</button>
     </div>
 
     <div class="week-nav">
@@ -50,6 +51,36 @@
   <section id="teamPanel" class="team-panel hidden">
     <aside id="teamList" class="team-list"></aside>
     <div id="teamDays" class="team-days"></div>
+  </section>
+
+  <!-- 차량 예약 현황: 아카이브 '차량예약신청' 위키의 예약 표를 달력으로 (읽기 전용) -->
+  <section id="carPanel" class="car-panel hidden">
+    <div id="carView" class="car-view">
+      <div class="car-toolbar">
+        <button id="carPrev" class="icon" title="이전 달">&#8249;</button>
+        <strong id="carMonth" class="car-month">—</strong>
+        <button id="carNext" class="icon" title="다음 달">&#8250;</button>
+        <button id="carThisMonth" class="ghost">이번 달</button>
+        <span class="car-legend">
+          <span class="car-dot avante"></span>아반떼
+          <span class="car-dot tucson"></span>투싼
+          <span class="car-dot other"></span>미지정
+        </span>
+        <div class="spacer"></div>
+        <span id="carMeta" class="muted small"></span>
+        <button id="carRefresh" class="ghost">새로고침</button>
+        <button id="carOpenWeb" class="ghost" title="예약은 위키 표에 직접 적는다">웹에서 예약</button>
+      </div>
+      <div class="car-body">
+        <div id="carGrid" class="car-grid"></div>
+        <aside id="carDetail" class="car-detail"></aside>
+      </div>
+    </div>
+
+    <div id="carAuth" class="log-auth hidden">
+      <p>아카이브(archive.insilicogen.com) 로그인이 필요합니다.</p>
+      <button id="carLogin" class="primary">아카이브 로그인</button>
+    </div>
   </section>
 
   <!-- 연락처 QR: 구성원 vCard 를 LAN 으로 공유하는 주소를 QR 로 보여준다 -->

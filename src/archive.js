@@ -16,11 +16,13 @@
  *          result.member     { group[], user[] }     기본 참여인원
  *   GET  /api/common/tag?target=project&q=          태그 검색 → result: string[]
  *   POST /api/project/log                           로그 생성
+ *   GET  /api/project/<name>                        프로젝트 위키 → result.content (Editor.js OutputData)
  *
  * 프로젝트 식별자는 pk 가 아니라 이름(name) 문자열이다. 웹 URL 도 /project/<name> 이다.
  */
 
 const { createClient, encodeQuery } = require('./client')
+const vehicles = require('./vehicles')
 
 const BASE = 'https://archive.insilicogen.com'
 
@@ -124,6 +126,25 @@ async function createLog (input) {
   return { message: (body && body.message) || '프로젝트 로그가 생성되었습니다.', result: body && body.result }
 }
 
+/** 차량 예약 위키 프로젝트 이름. 웹 주소는 /project/차량예약신청/wiki */
+const VEHICLE_PROJECT = '차량예약신청'
+
+/** 차량예약신청 위키의 예약 표를 읽어 예약 목록으로. 표 해석은 vehicles.js. */
+async function vehicleReservations () {
+  const body = await call('GET', '/api/project/' + encodeURIComponent(VEHICLE_PROJECT))
+  const result = (body && body.result) || {}
+  const info = result.modification_info || {}
+  return {
+    reservations: vehicles.parseReservations(result.content),
+    modifiedBy: info.modified_by || '',
+    modifiedAt: info.modified_at || ''
+  }
+}
+
+function vehicleWikiUrl () {
+  return `${projectUrl(VEHICLE_PROJECT)}/wiki`
+}
+
 /** "HH:MM" → "HH:MM:00" (이미 초가 있으면 그대로) */
 function toSeconds (time) {
   return /^\d{2}:\d{2}$/.test(time) ? `${time}:00` : time
@@ -138,5 +159,7 @@ module.exports = {
   searchProjects,
   logInput,
   searchTags,
-  createLog
+  createLog,
+  vehicleReservations,
+  vehicleWikiUrl
 }

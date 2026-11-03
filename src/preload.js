@@ -43,7 +43,9 @@ contextBridge.exposeInMainWorld('api', {
     logInput: (project) => ipcRenderer.invoke('archive:logInput', project),
     searchTags: (keyword) => ipcRenderer.invoke('archive:searchTags', keyword),
     createLog: (form) => ipcRenderer.invoke('archive:createLog', form),
-    openProject: (name) => ipcRenderer.invoke('archive:openProject', name)
+    openProject: (name) => ipcRenderer.invoke('archive:openProject', name),
+    vehicles: () => ipcRenderer.invoke('archive:vehicles'),
+    openVehicles: () => ipcRenderer.invoke('archive:openVehicles')
   },
 
   // 연락처 QR (.vcf 를 LAN 으로 공유)

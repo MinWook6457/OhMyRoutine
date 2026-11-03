@@ -159,6 +159,19 @@ git push origin main --tags
 - 트레이 메뉴 **아카이브 즐겨찾기** 에 즐겨찾기 프로젝트가 나열되고 클릭하면 브라우저로 연다.
   "새 로그 작성" 은 앱의 로그 탭을 바로 띄운다. 목록은 시작할 때와 로그 생성 후 갱신된다
 
+### 차량 예약 달력
+
+상단 **차량** 탭은 아카이브 [차량예약신청 위키](https://archive.insilicogen.com/project/%EC%B0%A8%EB%9F%89%EC%98%88%EC%95%BD%EC%8B%A0%EC%B2%AD/wiki)의
+"차량 이용 신청 현황" 표를 월 달력으로 **읽기 전용** 표시한다. 예약은 지금처럼 위키 표에 직접 적는다 (**웹에서 예약** 버튼).
+
+- 칸마다 `시작 시각 차량 운전자` 칩이 아반떼(파랑)·투싼(초록)·미지정(회색, 차량 열이 없던 2025년 표)으로 뜬다.
+  여러 날 걸친 예약은 이어지는 날에 `↳` 로 표시한다
+- 날짜를 누르면 오른쪽에 그날 차량별 빈 여부와 예약 상세(시각, 운전자, 출장지, 목적, 주차 위치, 차키 인수자)가 나온다
+- 아카이브 로그인을 로그 탭과 같이 쓴다. 탭을 열 때와, 1분 넘게 지난 뒤 창이 다시 포커스될 때 다시 받는다
+- 표는 사람이 손으로 적어 날짜 형식이 제각각이라(`2026-11-04(수) 08:00`, `2025-11-12 (수) 10:30`, 한 칸에 날짜 여러 개 등)
+  `src/vehicles.js` 가 날짜 뒤 첫 시각을 그 날짜의 시각으로 읽는다. 머리글에 `사용예정일시`·`복귀예정일시` 가 있는 표를 모두 모으고
+  `(예시)` 행은 뺀다. 마지막 응답은 `last-archive-vehicles.json` 에 남는다
+
 ### 아카이브 API
 
 번들(`app.7c658073.js`, `2263.6abc133f.js`, `2335.5c00c3b2.js`) 분석으로 확인한 계약. 응답 형식은 routine 과 같다.
@@ -172,6 +185,7 @@ git push origin main --tags
 | 로그 입력 기본값 | `GET /api/project/log/input?project=<name>` → `result { managers[], groups[], manager{user}, member{group[],user[]} }` |
 | 태그 검색 | `GET /api/common/tag?target=project&q=` |
 | 로그 생성 | `POST /api/project/log` |
+| 프로젝트 위키 | `GET /api/project/<name>` → `result { content: Editor.js OutputData, modification_info{modified_by, modified_at}, version }` |
 
 ```json
 { "project": "<프로젝트 이름>", "is_presentation_mode": false,

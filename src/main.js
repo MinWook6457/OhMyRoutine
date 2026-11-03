@@ -641,6 +641,11 @@ ipcMain.handle('archive:createLog', (_event, form) => archiveCall('createLog', a
   return archive.createLog({ ...form, content })
 }))
 
+ipcMain.handle('archive:vehicles', () =>
+  archiveCall('vehicles', () => archive.vehicleReservations()))
+
+ipcMain.handle('archive:openVehicles', () => shell.openExternal(archive.vehicleWikiUrl()))
+
 ipcMain.handle('archive:openProject', (_event, name) =>
   shell.openExternal(name ? archive.projectUrl(name) : `${archive.BASE}/project`))
 
