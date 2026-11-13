@@ -12,6 +12,7 @@ const state = {
   widget: false,
   view: 'week',      // 'week' = 월~금 전체, 'today' = 오늘 하루만, 'log' = 아카이브 로그 작성, 'team' = 팀 보기, 'car' = 차량 예약 달력
   logProject: '',    // 로그 패널에서 마지막으로 고른 프로젝트
+  logMode: 'write',  // 로그 패널 'write' = 새 로그 작성, 'browse' = 프로젝트 로그 검색
   days: [],          // 아래 makeDay() 가 만드는 모양
   loading: false,
   notice: [],        // 이번 주 공지 (문자열 배열)
@@ -576,6 +577,7 @@ document.getElementById('openWeb').addEventListener('click', () => window.api.op
 
 const WEEK_HINT = document.getElementById('hint').textContent
 const LOG_HINT = `빈 줄 = 단락 / - 항목 = 목록 (Tab 하위 단계) / 1. 항목 = 번호 목록 / # 제목 / ${MOD}+Enter 로 생성`
+const BROWSE_HINT = '읽기 전용 · 프로젝트를 고르면 로그를 모두 받아 두고 검색은 앱 안에서 바로 거른다 · 새 로그는 새로고침 · 제목을 누르면 웹에서 연다'
 const TEAM_HINT = '읽기 전용 · 왼쪽에서 구성원을 고르면 그 사람의 주간 업무가 보인다 · 부서 코드를 바꾸면 다른 부서도 볼 수 있다'
 const CAR_HINT = '읽기 전용 · 아카이브 차량예약신청 위키의 신청 현황 표 · 날짜를 누르면 오른쪽에 상세 · 예약은 "웹에서 예약" 으로 위키에 직접 적는다'
 
@@ -599,7 +601,7 @@ function applyView () {
   el.notice.classList.toggle('hidden', isLog || isCar || !state.notice.length)
   logEl.panel.classList.toggle('hidden', !isLog)
   carEl.panel.classList.toggle('hidden', !isCar)
-  document.getElementById('hint').textContent = isLog ? LOG_HINT : isTeam ? TEAM_HINT : isCar ? CAR_HINT : WEEK_HINT
+  document.getElementById('hint').textContent = isLog ? (state.logMode === 'browse' ? BROWSE_HINT : LOG_HINT) : isTeam ? TEAM_HINT : isCar ? CAR_HINT : WEEK_HINT
 }
 
 async function setView (view) {
@@ -660,9 +662,11 @@ document.addEventListener('keydown', (event) => {
 // 트레이 메뉴 '새 로그 작성' 등에서 보기 모드를 바꾼다.
 window.api.onSetView((view) => {
   if (state.view === view) {
-    if (view === 'log') logEl.text.focus()
+    if (view === 'log') setLogMode('write')
     return
   }
+  // 트레이 '새 로그 작성' 은 작성 화면으로 연다.
+  if (view === 'log') state.logMode = 'write'
   setView(view)
 })
 
@@ -720,7 +724,8 @@ function setLogState (text, kind) {
 function setLogAuthed (authed) {
   logState.authed = authed
   logEl.auth.classList.toggle('hidden', authed)
-  logEl.form.classList.toggle('hidden', !authed)
+  logEl.form.classList.toggle('hidden', !authed || state.logMode !== 'write')
+  browseEl.panel.classList.toggle('hidden', !authed || state.logMode !== 'browse')
 }
 
 /** 일자 = 오늘, 시작 = 현재 시각을 30분 단위로 내림, 종료 = +30분 (웹 기본값과 동일). */
@@ -1035,6 +1040,10 @@ async function enterLogPanel () {
 
   await loadBookmarks()
   if (!logEl.project.value && state.logProject) logEl.project.value = state.logProject
+  if (state.logMode === 'browse') {
+    enterBrowse()
+    return
+  }
   if (logEl.project.value && logState.inputFor !== logEl.project.value) await loadLogInput(logEl.project.value)
   ;(logEl.project.value ? logEl.text : logEl.project).focus()
 }
@@ -1193,6 +1202,314 @@ logEl.login.addEventListener('click', async () => {
   setLogState(ok ? '' : '로그인이 취소되었습니다.', ok ? '' : 'error')
   if (ok) enterLogPanel()
 })
+
+// ------------------------------------------------------------ 아카이브 로그 검색
+
+// 프로젝트를 고르면 로그를 모두 받아 두고, 검색은 받은 내용(화면에 보이는 평문) 안에서 바로 거른다.
+// 서버는 size 를 무시하고 10건씩 주므로 첫 페이지로 페이지 수를 알아낸 뒤 나머지를 몇 개씩 나눠 받는다.
+const BROWSE_FETCH_PARALLEL = 4
+const BROWSE_SHOW_STEP = 30    // 한 번에 그리는 건수. 나머지는 '더 보기'
+const BROWSE_FILTER_DELAY = 150
+
+const browseEl = {
+  modes: document.getElementById('logModes'),
+  panel: document.getElementById('logBrowse'),
+  project: document.getElementById('browseProject'),
+  projectPick: document.getElementById('browseProjectPick'),
+  search: document.getElementById('browseSearch'),
+  reload: document.getElementById('browseReload'),
+  state: document.getElementById('browseState'),
+  openProject: document.getElementById('browseOpenProject'),
+  list: document.getElementById('browseList')
+}
+
+const browseState = {
+  project: '',    // 받아 둔 로그가 어느 프로젝트 것인지
+  logs: [],       // 받아 둔 로그 전체 (최신순). 각 항목에 검색용 haystack 을 붙인다
+  count: 0,       // 서버가 알려준 전체 건수
+  loading: false,
+  terms: [],      // 지금 검색어 (공백으로 나눈 낱말, 소문자)
+  matches: [],    // terms 에 맞는 로그
+  shown: BROWSE_SHOW_STEP,
+  seq: 0,         // 늦게 온 이전 프로젝트 응답을 버리기 위한 요청 번호
+  filterTimer: null
+}
+
+function setBrowseState (text, kind) {
+  browseEl.state.textContent = text || ''
+  browseEl.state.className = 'muted' + (kind === 'error' ? ' error' : kind === 'ok' ? ' ok' : '')
+}
+
+function syncLogModeButtons () {
+  for (const button of browseEl.modes.querySelectorAll('.scope')) {
+    button.classList.toggle('active', button.dataset.mode === state.logMode)
+  }
+}
+
+function setLogMode (mode) {
+  state.logMode = mode
+  window.api.setSettings({ logMode: mode })
+  syncLogModeButtons()
+  applyView()
+  if (logState.authed === null) return // 아직 enterLogPanel 이 로그인 확인 중
+  setLogAuthed(logState.authed)
+  if (!logState.authed) return
+  if (mode === 'browse') enterBrowse()
+  else (logEl.project.value ? logEl.text : logEl.project).focus()
+}
+
+/** 검색 화면에 들어올 때: 프로젝트가 비어 있으면 작성 화면의 프로젝트를 가져온다. 이미 받아 둔 프로젝트면 다시 받지 않는다. */
+function enterBrowse () {
+  if (!browseEl.project.value) browseEl.project.value = logEl.project.value.trim() || state.logProject
+  const project = browseEl.project.value.trim()
+  if (project && project !== browseState.project) loadBrowse()
+  ;(project ? browseEl.search : browseEl.project).focus()
+}
+
+/** 로그 이름은 보통 '<프로젝트>_YYYYMMDD' 라 프로젝트 부분은 떼고 보여준다 (검색 대상에서도 뺀다). */
+function shortLogName (log) {
+  const prefix = browseState.project + '_'
+  return log.name.startsWith(prefix) && log.name.length > prefix.length ? log.name.slice(prefix.length) : log.name
+}
+
+/** 검색 대상: 제목, 본문, 태그, 담당자·참여자, 일자. 화면에 보이는 글과 같다. */
+function haystackOf (log) {
+  return [shortLogName(log), log.date, log.text, log.tags.map((t) => '#' + t).join(' '), log.managers.join(' '), log.participants.join(' ')]
+    .join('\n').toLowerCase()
+}
+
+/** 프로젝트 로그를 모두 받아 둔다. 받는 동안에도 받은 만큼 걸러서 보여준다. */
+async function loadBrowse () {
+  const project = browseEl.project.value.trim()
+  if (!project) {
+    setBrowseState('프로젝트를 선택하세요.', 'error')
+    browseEl.project.focus()
+    return
+  }
+
+  const mine = ++browseState.seq
+  const stale = () => mine !== browseState.seq
+  browseState.project = project
+  browseState.logs = []
+  browseState.count = 0
+  browseState.loading = true
+  browseEl.reload.disabled = true
+  setBrowseState('불러오는 중…')
+  filterBrowse()
+
+  const fail = (res) => {
+    if (stale()) return true
+    if (res.ok) return false
+    browseState.loading = false
+    browseEl.reload.disabled = false
+    if (res.code === 'AUTH_REQUIRED') setLogAuthed(false)
+    else setBrowseState(`로그를 불러오지 못했습니다: ${res.message}`, 'error')
+    filterBrowse()
+    return true
+  }
+
+  const first = await window.api.archive.projectLogs({ project, page: 1 })
+  if (fail(first)) return
+
+  const perPage = first.logs.length || 1
+  const pageCount = Math.max(1, Math.ceil(first.count / perPage))
+  const pages = [first.logs]
+  browseState.count = first.count
+
+  // 페이지 순서를 지키며 앞에서부터 이어 붙인다 (받는 순서는 뒤섞일 수 있다).
+  const publish = () => {
+    const seen = new Set()
+    const logs = []
+    for (const page of pages) {
+      if (!page) break
+      for (const log of page) {
+        if (seen.has(log.id)) continue // 받는 사이 새 로그가 생겨 페이지가 밀린 경우
+        seen.add(log.id)
+        logs.push(log)
+      }
+    }
+    browseState.logs = logs
+    setBrowseState(`불러오는 중… ${logs.length} / ${browseState.count}`)
+    filterBrowse({ keepShown: true })
+  }
+  for (const log of first.logs) log.haystack = haystackOf(log)
+  publish()
+
+  let next = 2
+  const worker = async () => {
+    while (next <= pageCount) {
+      const page = next++
+      const res = await window.api.archive.projectLogs({ project, page })
+      if (fail(res)) throw new Error('stop')
+      for (const log of res.logs) log.haystack = haystackOf(log)
+      pages[page - 1] = res.logs
+      publish()
+    }
+  }
+  try {
+    await Promise.all(Array.from({ length: Math.min(BROWSE_FETCH_PARALLEL, pageCount - 1) }, worker))
+  } catch {
+    return
+  }
+  if (stale()) return
+
+  browseState.loading = false
+  browseEl.reload.disabled = false
+  filterBrowse({ keepShown: true })
+}
+
+/** 검색어로 받아 둔 로그를 거른다. 공백으로 나눈 낱말이 모두 들어 있어야 맞는다 (대소문자 무시). */
+function filterBrowse ({ keepShown = false } = {}) {
+  browseState.terms = [...new Set(browseEl.search.value.toLowerCase().split(/\s+/).filter(Boolean))]
+  const terms = browseState.terms
+  browseState.matches = terms.length
+    ? browseState.logs.filter((log) => terms.every((term) => log.haystack.includes(term)))
+    : browseState.logs
+  if (!keepShown) {
+    browseState.shown = BROWSE_SHOW_STEP
+    browseEl.list.scrollTop = 0
+  }
+
+  if (!browseState.loading && browseState.project && browseEl.state.className.indexOf('error') === -1) {
+    setBrowseState(terms.length
+      ? `${browseState.matches.length}건 일치 / 전체 ${browseState.logs.length}건`
+      : `로그 ${browseState.logs.length}건`)
+  } else if (browseState.loading && terms.length) {
+    setBrowseState(`불러오는 중… ${browseState.logs.length} / ${browseState.count} · 지금까지 ${browseState.matches.length}건 일치`)
+  }
+  renderBrowse()
+}
+
+/** text 에서 terms 중 하나와 같은 부분(대소문자 무시)을 <mark> 로 감싼 노드 목록. */
+function highlighted (text, terms) {
+  if (!terms.length) return [document.createTextNode(text)]
+  const nodes = []
+  const lower = text.toLowerCase()
+  let from = 0
+  for (;;) {
+    let at = -1
+    let length = 0
+    for (const term of terms) {
+      const i = lower.indexOf(term, from)
+      if (i !== -1 && (at === -1 || i < at || (i === at && term.length > length))) {
+        at = i
+        length = term.length
+      }
+    }
+    if (at === -1) break
+    if (at > from) nodes.push(document.createTextNode(text.slice(from, at)))
+    const mark = document.createElement('mark')
+    mark.textContent = text.slice(at, at + length)
+    nodes.push(mark)
+    from = at + length
+  }
+  if (from < text.length) nodes.push(document.createTextNode(text.slice(from)))
+  return nodes
+}
+
+/** → "2026-11-12 (목) 17:00 ~ 18:15" */
+function logWhen (log) {
+  const day = log.date ? `${log.date} (${'일월화수목금토'[fromISO(log.date).getDay()]})` : ''
+  const time = log.startTime ? (log.endTime ? `${log.startTime} ~ ${log.endTime}` : log.startTime) : ''
+  return [day, time].filter(Boolean).join(' ')
+}
+
+function browseItem (log, terms) {
+  const item = document.createElement('article')
+  item.className = 'browse-item'
+
+  const head = document.createElement('div')
+  head.className = 'browse-head'
+  const title = document.createElement('button')
+  title.type = 'button'
+  title.className = 'browse-title'
+  title.title = `${log.name}\n웹에서 이 로그 열기`
+  title.append(...highlighted(shortLogName(log) || '(제목 없음)', terms))
+  title.addEventListener('click', () => window.api.archive.openLog(log.id))
+  head.append(title)
+  if (log.presentation) head.append(spanWith('chip browse-badge', '발표'))
+  item.append(head)
+
+  const people = [...new Set([...log.managers, ...log.participants])]
+  const meta = document.createElement('span')
+  meta.className = 'browse-meta'
+  meta.append(...highlighted([logWhen(log), people.join(', ')].filter(Boolean).join(' · '), terms))
+  item.append(meta)
+
+  const body = document.createElement('div')
+  body.className = 'browse-text'
+  body.append(...highlighted(log.text || '(본문 없음)', terms))
+  item.append(body)
+
+  if (log.tags.length) {
+    const tags = document.createElement('div')
+    tags.className = 'browse-tags'
+    for (const tag of log.tags) {
+      const chip = document.createElement('span')
+      chip.className = 'chip'
+      chip.append(...highlighted('#' + tag, terms))
+      tags.append(chip)
+    }
+    item.append(tags)
+  }
+  return item
+}
+
+function renderBrowse () {
+  const { matches, shown, terms } = browseState
+  const nodes = matches.slice(0, shown).map((log) => browseItem(log, terms))
+
+  if (!nodes.length && browseState.project && !browseState.loading) {
+    const empty = document.createElement('p')
+    empty.className = 'empty muted'
+    empty.textContent = terms.length ? '검색 결과가 없습니다.' : '이 프로젝트에는 로그가 없습니다.'
+    nodes.push(empty)
+  }
+
+  if (matches.length > shown) {
+    const more = document.createElement('button')
+    more.className = 'ghost browse-more'
+    more.textContent = `더 보기 (${shown} / ${matches.length})`
+    more.addEventListener('click', () => {
+      browseState.shown += BROWSE_SHOW_STEP
+      renderBrowse()
+    })
+    nodes.push(more)
+  }
+
+  browseEl.list.replaceChildren(...nodes)
+}
+
+makePicker({
+  input: browseEl.project,
+  list: browseEl.projectPick,
+  source: projectSource,
+  onPick: (project) => {
+    browseEl.project.value = project.name
+    loadBrowse()
+    browseEl.search.focus()
+  }
+})
+
+for (const button of browseEl.modes.querySelectorAll('.scope')) {
+  button.addEventListener('click', () => {
+    if (state.logMode !== button.dataset.mode) setLogMode(button.dataset.mode)
+  })
+}
+// 입력하는 대로 거른다 (서버 호출 없음).
+browseEl.search.addEventListener('input', () => {
+  clearTimeout(browseState.filterTimer)
+  browseState.filterTimer = setTimeout(() => filterBrowse(), BROWSE_FILTER_DELAY)
+})
+browseEl.search.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    clearTimeout(browseState.filterTimer)
+    filterBrowse()
+  }
+})
+browseEl.reload.addEventListener('click', () => loadBrowse())
+browseEl.openProject.addEventListener('click', () => window.api.archive.openProject(browseEl.project.value.trim()))
 
 // ------------------------------------------------------------ 공지
 
@@ -1565,6 +1882,8 @@ async function start () {
   state.widget = Boolean(config.widget)
   state.view = ['today', 'log', 'team', 'car'].includes(config.view) ? config.view : 'week'
   state.logProject = config.logProject || ''
+  state.logMode = config.logMode === 'browse' ? 'browse' : 'write'
+  syncLogModeButtons()
   state.team.selected = config.teamMember ?? null
   el.department.value = state.department
 

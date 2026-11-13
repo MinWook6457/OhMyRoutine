@@ -159,6 +159,18 @@ git push origin main --tags
 - 트레이 메뉴 **아카이브 즐겨찾기** 에 즐겨찾기 프로젝트가 나열되고 클릭하면 브라우저로 연다.
   "새 로그 작성" 은 앱의 로그 탭을 바로 띄운다. 목록은 시작할 때와 로그 생성 후 갱신된다
 
+### 로그 검색
+
+로그 탭 위의 **작성 / 검색** 에서 **검색** 을 고르면 프로젝트 로그를 **읽기 전용**으로 본다.
+
+- 프로젝트를 고르면(작성 화면과 같은 즐겨찾기·이름 검색 목록) 그 프로젝트 로그를 **모두** 받아 둔다.
+  서버가 10건씩만 주므로 페이지를 4개씩 나눠 받으며, 받는 동안에도 받은 만큼 보인다. 다시 받으려면 **새로고침**
+- 검색은 서버를 부르지 않고 받아 둔 내용(화면에 보이는 평문) 안에서 입력하는 대로 거른다.
+  제목·본문·태그·담당자/참여자·일자가 대상이고, 띄어 쓴 낱말은 모두 들어 있어야 맞는다(대소문자 무시). 일치한 부분은 강조된다
+- 목록은 30건씩 그리고 **더 보기** 로 이어 그린다
+- 본문은 Editor.js 블록을 평문으로 바꿔 보여준다(`# 제목`, `- 목록`, 표는 `|` 구분). 제목을 누르면 그 로그를 웹에서 연다
+- 마지막으로 고른 작성/검색 화면은 기억한다. 트레이 "새 로그 작성" 은 항상 작성 화면으로 연다
+
 ### 차량 예약 달력
 
 상단 **차량** 탭은 아카이브 [차량예약신청 위키](https://archive.insilicogen.com/project/%EC%B0%A8%EB%9F%89%EC%98%88%EC%95%BD%EC%8B%A0%EC%B2%AD/wiki)의
@@ -185,6 +197,7 @@ git push origin main --tags
 | 로그 입력 기본값 | `GET /api/project/log/input?project=<name>` → `result { managers[], groups[], manager{user}, member{group[],user[]} }` |
 | 태그 검색 | `GET /api/common/tag?target=project&q=` |
 | 로그 생성 | `POST /api/project/log` |
+| 로그 목록·검색 | `GET /api/project/log?project_name=<name>&search=&page=` → **`result` 로 감싸지 않은** `{ count, total_page, next, data: { data[], total_count } }`. 항목은 `log_id, name(…_YYYYMMDD), started_at/ended_at("HH:MM"), manager[], participants[], tags[], content`. `size` 는 무시되고 10건씩 온다 |
 | 프로젝트 위키 | `GET /api/project/<name>` → `result { content: Editor.js OutputData, modification_info{modified_by, modified_at}, version }` |
 
 ```json

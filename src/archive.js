@@ -16,6 +16,11 @@
  *          result.member     { group[], user[] }     기본 참여인원
  *   GET  /api/common/tag?target=project&q=          태그 검색 → result: string[]
  *   POST /api/project/log                           로그 생성
+ *   GET  /api/project/log?project_name=&search=&size=&page=
+ *        프로젝트 로그 목록, 최신순 (search 는 본문 검색). 이것만 result 로 감싸지 않는다
+ *        → { count, total_page, next, data: { data[], total_count } }
+ *        항목: log_id, name(…_YYYYMMDD), started_at/ended_at ("HH:MM"), manager[], participants[],
+ *              tags[], is_presentation_mode, content (Editor.js OutputData), modification_info
  *   GET  /api/project/<name>                        프로젝트 위키 → result.content (Editor.js OutputData)
  *
  * 프로젝트 식별자는 pk 가 아니라 이름(name) 문자열이다. 웹 URL 도 /project/<name> 이다.
@@ -23,6 +28,7 @@
 
 const { createClient, encodeQuery } = require('./client')
 const vehicles = require('./vehicles')
+const logblocks = require('./logblocks')
 
 const BASE = 'https://archive.insilicogen.com'
 
@@ -126,6 +132,64 @@ async function createLog (input) {
   return { message: (body && body.message) || '프로젝트 로그가 생성되었습니다.', result: body && body.result }
 }
 
+function logUrl (id) {
+  return `${BASE}/project/log/${encodeURIComponent(id)}`
+}
+
+/** "17:00" 또는 "2026-11-12 17:00:00" → { date, time: 'HH:MM' } */
+function splitDateTime (value) {
+  const m = /^(?:(\d{4}-\d{2}-\d{2})[ T])?(\d{1,2}:\d{2})/.exec(String(value || '').trim())
+  return m ? { date: m[1] || '', time: m[2].padStart(5, '0') } : { date: '', time: '' }
+}
+
+/** 목록의 started_at 은 시각뿐이라 일자는 로그 이름 끝의 _YYYYMMDD (같은 날 여러 개면 _YYYYMMDD_3) 에서 읽는다. */
+function nameDate (name) {
+  const m = /_(\d{4})(\d{2})(\d{2})(?:_\d+)?$/.exec(String(name || ''))
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : ''
+}
+
+function names (value) {
+  return Array.isArray(value) ? value.filter(Boolean).map(String) : (value ? [String(value)] : [])
+}
+
+/**
+ * 프로젝트 로그 목록. 웹의 프로젝트 화면 '로그 내용 검색' 과 같은 호출이다.
+ * 목록 응답에 본문(content)이 들어 있어 상세를 따로 부르지 않는다.
+ *
+ * @returns {{ logs: object[], count: number }}
+ */
+async function projectLogs ({ project, search, page = 1, size = 10 }) {
+  const body = await call('GET', '/api/project/log' + encodeQuery({ project_name: project, search, size, page }))
+  // 이 목록만 { code, result } 로 감싸지 않고 { count, total_page, next, data: { data: [], total_count } } 로 온다.
+  // 웹 코드는 result 로 감싼 모양과 data 가 바로 배열인 모양도 받으므로 셋 다 받는다.
+  const result = (body && body.result) || body || {}
+  const nested = result.data && !Array.isArray(result.data) ? result.data : null
+  const data = Array.isArray(result.data) ? result.data : (nested && Array.isArray(nested.data) ? nested.data : [])
+  const count = Number(result.count || result.total_count || (nested && nested.total_count) || data.length)
+
+  return {
+    count,
+    logs: data.map((item) => {
+      const info = item.modification_info || {}
+      const time = splitDateTime(item.started_at)
+      return {
+        id: item.log_id || item.id,
+        name: item.name || '',
+        date: time.date || nameDate(item.name),
+        startTime: time.time,
+        endTime: splitDateTime(item.ended_at).time,
+        managers: names(item.manager),
+        participants: names(item.participants),
+        tags: names(item.tags),
+        presentation: Boolean(item.is_presentation_mode),
+        modifiedBy: info.modified_by || '',
+        modifiedAt: info.modified_at || '',
+        text: logblocks.blocksToText(item.content)
+      }
+    })
+  }
+}
+
 /** 차량 예약 위키 프로젝트 이름. 웹 주소는 /project/차량예약신청/wiki */
 const VEHICLE_PROJECT = '차량예약신청'
 
@@ -160,6 +224,8 @@ module.exports = {
   logInput,
   searchTags,
   createLog,
+  logUrl,
+  projectLogs,
   vehicleReservations,
   vehicleWikiUrl
 }

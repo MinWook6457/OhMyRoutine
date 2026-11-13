@@ -14,6 +14,7 @@ const DEFAULTS = {
   widgetBounds: null,
   archiveBookmarks: [],   // 트레이 메뉴용 캐시. 시작할 때 다시 받아온다
   logProject: '',         // 로그 패널에서 마지막으로 고른 프로젝트
+  logMode: 'write',       // 로그 패널 'write' = 작성, 'browse' = 로그 검색
   theme: 'system',        // 'system' | 'light' | 'dark'
   teamMember: null        // 팀 보기에서 마지막으로 고른 구성원 user_pk
 }

@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('api', {
     searchTags: (keyword) => ipcRenderer.invoke('archive:searchTags', keyword),
     createLog: (form) => ipcRenderer.invoke('archive:createLog', form),
     openProject: (name) => ipcRenderer.invoke('archive:openProject', name),
+    projectLogs: (query) => ipcRenderer.invoke('archive:projectLogs', query),
+    openLog: (id) => ipcRenderer.invoke('archive:openLog', id),
     vehicles: () => ipcRenderer.invoke('archive:vehicles'),
     openVehicles: () => ipcRenderer.invoke('archive:openVehicles')
   },

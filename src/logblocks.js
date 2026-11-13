@@ -109,9 +109,79 @@ function textToBlocks (text) {
   return { time: Date.now(), blocks, version: VERSION }
 }
 
+/** 블록 안의 인라인 HTML(<b>, <a>, <br>, &nbsp; …) → 평문 */
+function htmlToText (html) {
+  return String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+}
+
+/** nested-list 항목(문자열 또는 { content, items })을 들여쓴 글머리 줄로. */
+function listLines (items, style, depth, out) {
+  ;(items || []).forEach((item, index) => {
+    const content = typeof item === 'string' ? item : (item && (item.content || item.text)) || ''
+    const marker = style === 'ordered' ? `${index + 1}.` : '-'
+    out.push('  '.repeat(depth) + marker + ' ' + htmlToText(content).replace(/\n/g, ' '))
+    if (item && Array.isArray(item.items)) listLines(item.items, style, depth + 1, out)
+  })
+}
+
+/**
+ * Editor.js OutputData → 평문 (textToBlocks 의 반대 방향, 읽기용).
+ * 블록 사이는 빈 줄. 모르는 블록은 data 안의 text 만 건진다.
+ */
+function blocksToText (content) {
+  const blocks = (content && Array.isArray(content.blocks)) ? content.blocks : []
+  const parts = []
+  for (const block of blocks) {
+    const data = (block && block.data) || {}
+    const lines = []
+    switch (block && block.type) {
+      case 'header':
+        lines.push('# ' + htmlToText(data.text))
+        break
+      case 'list':
+      case 'nestedList':
+        listLines(data.items, data.style, 0, lines)
+        break
+      case 'checklist':
+        for (const item of data.items || []) lines.push((item.checked ? '[x] ' : '[ ] ') + htmlToText(item.text))
+        break
+      case 'table':
+        for (const row of data.content || data.rows || []) {
+          lines.push((row || []).map((cell) => htmlToText(cell && typeof cell === 'object' ? cell.content : cell).replace(/\n/g, ' ')).join(' | '))
+        }
+        break
+      case 'code':
+        lines.push(String(data.code || ''))
+        break
+      case 'quote':
+        lines.push('> ' + htmlToText(data.text))
+        if (data.caption) lines.push('  — ' + htmlToText(data.caption))
+        break
+      case 'delimiter':
+        lines.push('* * *')
+        break
+      default:
+        if (data.text) lines.push(htmlToText(data.text))
+        else if (data.caption) lines.push(htmlToText(data.caption))
+        else if (data.title || data.message) lines.push([data.title, data.message].filter(Boolean).map(htmlToText).join(' — '))
+    }
+    const text = lines.join('\n').trim()
+    if (text) parts.push(text)
+  }
+  return parts.join('\n\n')
+}
+
 /** 실제로 내용이 있는지 (공백만 있는 본문은 저장하지 않게) */
 function hasContent (text) {
   return String(text || '').trim() !== ''
 }
 
-module.exports = { textToBlocks, hasContent, VERSION }
+module.exports = { textToBlocks, blocksToText, hasContent, VERSION }

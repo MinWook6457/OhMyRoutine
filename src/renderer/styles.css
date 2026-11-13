@@ -677,6 +677,58 @@ body.widget .log-row .field:not(.grow) { display: none; }
 .chip button { border: none; background: transparent; padding: 0 2px; font-size: 13px; line-height: 1; color: var(--muted); }
 .chip button:hover { color: var(--danger); }
 
+/* log panel mode switch (작성 / 검색) */
+.log-modes { align-self: flex-start; margin-bottom: 10px; }
+.log-modes .scope { height: 28px; font-size: 13px; }
+
+/* archive log search (읽기 전용). 카드 모양과 .hidden 처리는 .log-form 을 그대로 쓴다 */
+.browse-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 -4px;
+  padding: 0 4px 4px;
+}
+.browse-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+}
+.browse-head { display: flex; align-items: baseline; gap: 8px; }
+.browse-title {
+  height: auto;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+}
+.browse-title:hover { background: transparent; color: var(--primary); text-decoration: underline; }
+.browse-badge { background: var(--weak-bg); color: var(--weak-fg); }
+.browse-meta { font-size: 12px; color: var(--muted); }
+.browse-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-body);
+  white-space: pre-wrap;
+  word-break: break-word;   /* 검색어가 가려지지 않게 본문은 접지 않고 목록 전체를 스크롤한다 */
+}
+.browse-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.browse-list mark { background: var(--trip-bg); color: var(--trip-fg); border-radius: 3px; padding: 0 1px; }
+.browse-list .empty { margin: 24px auto; font-size: 13px; }
+.browse-more { align-self: center; }
+
+body.widget .log-modes { margin-bottom: 6px; }
+body.widget .browse-item { background: var(--glass); }
+
 
 /* ------------------------------------------------------------- 업데이트 토스트 (창 우측 하단) */
 

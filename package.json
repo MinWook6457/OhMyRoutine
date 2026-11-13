@@ -1,6 +1,6 @@
 {
   "name": "routine-weekly",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "inpleROUTINE 주간 업무 일지 데스크톱 편집기",
   "main": "src/main.js",
   "author": "inco-bs2",

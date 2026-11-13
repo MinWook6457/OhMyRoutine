@@ -116,8 +116,37 @@
     </div>
   </div>
 
-  <!-- 아카이브 프로젝트 로그 작성 패널 -->
+  <!-- 아카이브 프로젝트 로그 패널: 작성 / 검색 -->
   <section id="logPanel" class="log-panel hidden">
+    <div id="logModes" class="log-modes segmented" role="group" aria-label="로그 작업">
+      <button type="button" class="scope active" data-mode="write">작성</button>
+      <button type="button" class="scope" data-mode="browse" title="프로젝트를 골라 로그 본문 검색">검색</button>
+    </div>
+
+    <!-- 로그 검색: 프로젝트를 고르면 로그를 모두 받아 두고, 검색어는 앱 안에서 바로 거른다 -->
+    <div id="logBrowse" class="log-form log-browse hidden">
+      <div class="log-row">
+        <label class="field grow has-picker">
+          <span>프로젝트 <em class="muted">(즐겨찾기 목록, 이름으로 검색)</em></span>
+          <input id="browseProject" spellcheck="false" autocomplete="off" placeholder="클릭해서 고르거나 이름 입력">
+          <ul id="browseProjectPick" class="picker hidden"></ul>
+        </label>
+        <label class="field grow">
+          <span>검색어 <em class="muted">(제목·본문·태그·사람, 띄어 쓰면 모두 포함)</em></span>
+          <input id="browseSearch" type="search" spellcheck="false" autocomplete="off" placeholder="입력하면 바로 걸러짐">
+        </label>
+        <button id="browseReload" class="ghost" title="아카이브에서 이 프로젝트 로그를 다시 받기">새로고침</button>
+      </div>
+
+      <div class="log-actions">
+        <span id="browseState" class="muted"></span>
+        <div class="spacer"></div>
+        <button id="browseOpenProject" class="ghost">웹에서 프로젝트 열기</button>
+      </div>
+
+      <div id="browseList" class="browse-list"></div>
+    </div>
+
     <div id="logForm" class="log-form">
       <div class="log-row">
         <label class="field grow has-picker">
