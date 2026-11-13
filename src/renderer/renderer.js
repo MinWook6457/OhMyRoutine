@@ -577,7 +577,7 @@ document.getElementById('openWeb').addEventListener('click', () => window.api.op
 
 const WEEK_HINT = document.getElementById('hint').textContent
 const LOG_HINT = `빈 줄 = 단락 / - 항목 = 목록 (Tab 하위 단계) / 1. 항목 = 번호 목록 / # 제목 / ${MOD}+Enter 로 생성`
-const BROWSE_HINT = '읽기 전용 · 프로젝트를 고르면 로그를 모두 받아 두고 검색은 앱 안에서 바로 거른다 · 새 로그는 새로고침 · 제목을 누르면 웹에서 연다'
+const BROWSE_HINT = '읽기 전용 · ↑↓ = 이전/다음 로그 · Enter / Shift+Enter = 본문의 다음/이전 일치 · PageUp/PageDown = 본문 넘기기 · 새 로그는 새로고침 · 제목을 누르면 웹에서 연다'
 const TEAM_HINT = '읽기 전용 · 왼쪽에서 구성원을 고르면 그 사람의 주간 업무가 보인다 · 부서 코드를 바꾸면 다른 부서도 볼 수 있다'
 const CAR_HINT = '읽기 전용 · 아카이브 차량예약신청 위키의 신청 현황 표 · 날짜를 누르면 오른쪽에 상세 · 예약은 "웹에서 예약" 으로 위키에 직접 적는다'
 
@@ -1208,7 +1208,7 @@ logEl.login.addEventListener('click', async () => {
 // 프로젝트를 고르면 로그를 모두 받아 두고, 검색은 받은 내용(화면에 보이는 평문) 안에서 바로 거른다.
 // 서버는 size 를 무시하고 10건씩 주므로 첫 페이지로 페이지 수를 알아낸 뒤 나머지를 몇 개씩 나눠 받는다.
 const BROWSE_FETCH_PARALLEL = 4
-const BROWSE_SHOW_STEP = 30    // 한 번에 그리는 건수. 나머지는 '더 보기'
+const BROWSE_SHOW_STEP = 50    // 왼쪽 목록에 한 번에 그리는 건수. 나머지는 '더 보기'
 const BROWSE_FILTER_DELAY = 150
 
 const browseEl = {
@@ -1220,7 +1220,8 @@ const browseEl = {
   reload: document.getElementById('browseReload'),
   state: document.getElementById('browseState'),
   openProject: document.getElementById('browseOpenProject'),
-  list: document.getElementById('browseList')
+  list: document.getElementById('browseList'),
+  detail: document.getElementById('browseDetail')
 }
 
 const browseState = {
@@ -1231,7 +1232,9 @@ const browseState = {
   terms: [],      // 지금 검색어 (공백으로 나눈 낱말, 소문자)
   matches: [],    // terms 에 맞는 로그
   shown: BROWSE_SHOW_STEP,
-  seq: 0,         // 늦게 온 이전 프로젝트 응답을 버리기 위한 요청 번호
+  selected: null, // 오른쪽에 펼친 로그 id
+  markIndex: -1,  // 오른쪽 본문에서 지금 가리키는 일치 순번
+  seq: 0,        // 늦게 온 이전 프로젝트 응답을 버리기 위한 요청 번호
   filterTimer: null
 }
 
@@ -1368,6 +1371,7 @@ function filterBrowse ({ keepShown = false } = {}) {
   if (!keepShown) {
     browseState.shown = BROWSE_SHOW_STEP
     browseEl.list.scrollTop = 0
+    browseState.selected = null // 검색어가 바뀌면 첫 결과를 편다
   }
 
   if (!browseState.loading && browseState.project && browseEl.state.className.indexOf('error') === -1) {
@@ -1414,9 +1418,69 @@ function logWhen (log) {
   return [day, time].filter(Boolean).join(' ')
 }
 
-function browseItem (log, terms) {
-  const item = document.createElement('article')
-  item.className = 'browse-item'
+/** "2026-11-12" → "11-12 (목)" */
+function shortDay (iso) {
+  return iso ? `${iso.slice(5)} (${'일월화수목금토'[fromISO(iso).getDay()]})` : ''
+}
+
+/** 본문에서 검색어가 든 줄을 최대 limit 개. 검색어가 없으면 첫 줄. 긴 줄은 첫 일치 주변만 자른다. */
+function snippetLines (log, terms, limit = 2) {
+  const lines = (log.text || '').split('\n').map((line) => line.replace(/^\s*(?:[-*]|\d+\.|#+|>)\s*/, '').trim()).filter(Boolean)
+  if (!terms.length) return lines.slice(0, 1)
+  const out = []
+  for (const line of lines) {
+    const lower = line.toLowerCase()
+    const at = Math.min(...terms.map((term) => { const i = lower.indexOf(term); return i === -1 ? Infinity : i }))
+    if (at === Infinity) continue
+    out.push(at > 24 ? '…' + line.slice(at - 16) : line)
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+/** 왼쪽 목록 한 줄: 일자 · 제목 · 일치한 본문 줄 */
+function browseRow (log, terms) {
+  const row = document.createElement('button')
+  row.type = 'button'
+  row.className = 'browse-row' + (log.id === browseState.selected ? ' active' : '')
+  row.dataset.id = log.id
+
+  const head = document.createElement('span')
+  head.className = 'browse-row-head'
+  head.append(spanWith('browse-row-day', shortDay(log.date)))
+  const name = document.createElement('span')
+  name.className = 'browse-row-name'
+  name.append(...highlighted(shortLogName(log) || '(제목 없음)', terms))
+  head.append(name)
+  if (log.presentation) head.append(spanWith('chip browse-badge', '발표'))
+  row.append(head)
+
+  for (const line of snippetLines(log, terms)) {
+    const snippet = document.createElement('span')
+    snippet.className = 'browse-row-snippet'
+    snippet.append(...highlighted(line, terms))
+    row.append(snippet)
+  }
+
+  row.addEventListener('click', () => selectBrowse(log.id))
+  return row
+}
+
+/** 오른쪽: 고른 로그 전체. 첫 일치 위치로 스크롤한다. */
+function renderBrowseDetail () {
+  const terms = browseState.terms
+  const log = browseState.matches.find((l) => l.id === browseState.selected)
+  browseState.markIndex = -1
+  browseEl.detail.dataset.id = String(browseState.selected)
+  browseEl.detail.dataset.terms = terms.join(' ')
+
+  if (!log) {
+    const empty = document.createElement('p')
+    empty.className = 'empty muted'
+    empty.textContent = browseState.project ? '왼쪽에서 로그를 고르세요.' : '프로젝트를 고르면 로그가 여기 나옵니다.'
+    browseEl.detail.replaceChildren(empty)
+    return
+  }
 
   const head = document.createElement('div')
   head.className = 'browse-head'
@@ -1428,19 +1492,33 @@ function browseItem (log, terms) {
   title.addEventListener('click', () => window.api.archive.openLog(log.id))
   head.append(title)
   if (log.presentation) head.append(spanWith('chip browse-badge', '발표'))
-  item.append(head)
+  head.append(Object.assign(document.createElement('span'), { className: 'spacer' }))
+
+  // 일치 위치 이동 (검색 중일 때만)
+  const nav = document.createElement('span')
+  nav.className = 'browse-nav'
+  if (terms.length) {
+    const prev = document.createElement('button')
+    prev.className = 'icon'
+    prev.title = '이전 일치 (Shift+Enter)'
+    prev.textContent = '‹'
+    prev.addEventListener('click', () => moveMark(-1))
+    const next = document.createElement('button')
+    next.className = 'icon'
+    next.title = '다음 일치 (Enter)'
+    next.textContent = '›'
+    next.addEventListener('click', () => moveMark(1))
+    const count = spanWith('browse-nav-count muted', '')
+    nav.append(prev, count, next)
+  }
+  head.append(nav)
 
   const people = [...new Set([...log.managers, ...log.participants])]
-  const meta = document.createElement('span')
+  const meta = document.createElement('div')
   meta.className = 'browse-meta'
   meta.append(...highlighted([logWhen(log), people.join(', ')].filter(Boolean).join(' · '), terms))
-  item.append(meta)
 
-  const body = document.createElement('div')
-  body.className = 'browse-text'
-  body.append(...highlighted(log.text || '(본문 없음)', terms))
-  item.append(body)
-
+  const nodes = [head, meta]
   if (log.tags.length) {
     const tags = document.createElement('div')
     tags.className = 'browse-tags'
@@ -1450,14 +1528,72 @@ function browseItem (log, terms) {
       chip.append(...highlighted('#' + tag, terms))
       tags.append(chip)
     }
-    item.append(tags)
+    nodes.push(tags)
   }
-  return item
+
+  const body = document.createElement('div')
+  body.className = 'browse-text'
+  body.append(...highlighted(log.text || '(본문 없음)', terms))
+  nodes.push(body)
+
+  browseEl.detail.replaceChildren(...nodes)
+  browseEl.detail.scrollTop = 0
+  if (terms.length) moveMark(1)
+}
+
+/** 오른쪽 본문에서 다음(+1)/이전(-1) 일치로 이동한다. 본문 안의 일치를 먼저 보여주려고 제목·메타 일치는 건너뛴다. */
+function moveMark (delta) {
+  const marks = [...browseEl.detail.querySelectorAll('.browse-text mark, .browse-tags mark')]
+  const all = marks.length ? marks : [...browseEl.detail.querySelectorAll('mark')]
+  const count = browseEl.detail.querySelector('.browse-nav-count')
+  if (!all.length) {
+    if (count) count.textContent = '본문 일치 없음'
+    return
+  }
+  const index = browseState.markIndex === -1 && delta > 0
+    ? 0
+    : (browseState.markIndex + delta + all.length) % all.length
+  browseState.markIndex = index
+  for (const mark of all) mark.classList.remove('current')
+  all[index].classList.add('current')
+  all[index].scrollIntoView({ block: 'center' })
+  if (count) count.textContent = `${index + 1} / ${all.length}`
+}
+
+function selectBrowse (id) {
+  browseState.selected = id
+  for (const row of browseEl.list.querySelectorAll('.browse-row')) {
+    const active = String(row.dataset.id) === String(id)
+    row.classList.toggle('active', active)
+    if (active) row.scrollIntoView({ block: 'nearest' })
+  }
+  renderBrowseDetail()
+}
+
+/** 목록에서 위(-1)/아래(+1) 로그로. 아직 그리지 않은 곳이면 더 그린다. */
+function stepBrowse (delta) {
+  const { matches } = browseState
+  if (!matches.length) return
+  const at = matches.findIndex((l) => l.id === browseState.selected)
+  const next = Math.max(0, Math.min(matches.length - 1, at + delta))
+  if (next >= browseState.shown) {
+    browseState.shown += BROWSE_SHOW_STEP
+    browseState.selected = matches[next].id
+    renderBrowse()
+    return
+  }
+  selectBrowse(matches[next].id)
 }
 
 function renderBrowse () {
   const { matches, shown, terms } = browseState
-  const nodes = matches.slice(0, shown).map((log) => browseItem(log, terms))
+
+  // 고른 로그가 결과에서 빠졌으면 첫 결과를 고른다.
+  if (!matches.some((l) => l.id === browseState.selected)) {
+    browseState.selected = matches.length ? matches[0].id : null
+  }
+
+  const nodes = matches.slice(0, shown).map((log) => browseRow(log, terms))
 
   if (!nodes.length && browseState.project && !browseState.loading) {
     const empty = document.createElement('p')
@@ -1478,6 +1614,11 @@ function renderBrowse () {
   }
 
   browseEl.list.replaceChildren(...nodes)
+
+  // 받는 중에 목록만 늘어난 경우 오른쪽은 다시 그리지 않는다 (읽던 위치 유지).
+  if (browseEl.detail.dataset.id !== String(browseState.selected) || browseEl.detail.dataset.terms !== terms.join(' ')) {
+    renderBrowseDetail()
+  }
 }
 
 makePicker({
@@ -1501,11 +1642,34 @@ browseEl.search.addEventListener('input', () => {
   clearTimeout(browseState.filterTimer)
   browseState.filterTimer = setTimeout(() => filterBrowse(), BROWSE_FILTER_DELAY)
 })
+// 검색 칸: Enter / Shift+Enter = 오른쪽 본문의 다음/이전 일치
 browseEl.search.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
+  if (event.key !== 'Enter') return
+  event.preventDefault()
+  const pending = browseEl.search.value.toLowerCase().split(/\s+/).filter(Boolean).join(' ') !== browseState.terms.join(' ')
+  clearTimeout(browseState.filterTimer)
+  if (pending) filterBrowse()
+  else moveMark(event.shiftKey ? -1 : 1)
+})
+
+// 검색 화면 어디서든: ↑↓ = 이전/다음 로그, PageUp/PageDown = 오른쪽 본문 넘기기.
+// 프로젝트 칸은 고르기 목록이 ↑↓ 를 쓰므로 뺀다.
+document.addEventListener('keydown', (event) => {
+  if (state.view !== 'log' || state.logMode !== 'browse' || browseEl.panel.classList.contains('hidden')) return
+  if (event.ctrlKey || event.metaKey || event.altKey) return
+  if (event.target === browseEl.project) return
+
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault()
-    clearTimeout(browseState.filterTimer)
-    filterBrowse()
+    const fromList = browseEl.list.contains(document.activeElement)
+    stepBrowse(event.key === 'ArrowDown' ? 1 : -1)
+    // 목록에 포커스가 있었으면 따라가게 한다 (Tab 으로 들어온 경우).
+    const active = fromList && browseEl.list.querySelector('.browse-row.active')
+    if (active) active.focus()
+  } else if (event.key === 'PageDown' || event.key === 'PageUp') {
+    event.preventDefault()
+    const step = browseEl.detail.clientHeight * 0.85
+    browseEl.detail.scrollBy({ top: event.key === 'PageDown' ? step : -step })
   }
 })
 browseEl.reload.addEventListener('click', () => loadBrowse())

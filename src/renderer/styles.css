@@ -681,27 +681,68 @@ body.widget .log-row .field:not(.grow) { display: none; }
 .log-modes { align-self: flex-start; margin-bottom: 10px; }
 .log-modes .scope { height: 28px; font-size: 13px; }
 
-/* archive log search (읽기 전용). 카드 모양과 .hidden 처리는 .log-form 을 그대로 쓴다 */
-.browse-list {
+/* archive log search (읽기 전용). 카드 모양과 .hidden 처리는 .log-form 을 그대로 쓴다.
+   왼쪽 = 일치한 로그 목록(일자·제목·일치한 줄), 오른쪽 = 고른 로그 전체 */
+.browse-body {
   flex: 1;
   min-height: 0;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+.browse-list {
+  flex: none;
+  width: 340px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-right: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+.browse-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+  height: auto;
+  padding: 8px 10px;
+  margin: 1px 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-body);
+  text-align: left;
+  font-weight: 400;
+}
+.browse-row:hover { background: var(--gray-100); }
+.browse-row:active { transform: none; }
+.browse-row.active { background: var(--weak-bg); }
+.browse-row-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.browse-row-day { flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.browse-row-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browse-row.active .browse-row-name { color: var(--weak-fg); }
+.browse-row-snippet {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.browse-detail {
+  flex: 1;
+  min-width: 0;
   overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 0 -4px;
-  padding: 0 4px 4px;
+  padding: 14px 18px;
 }
-.browse-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--bg);
-}
-.browse-head { display: flex; align-items: baseline; gap: 8px; }
+.browse-head { display: flex; align-items: center; gap: 8px; }
+.browse-nav { display: flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; }
+.browse-nav button.icon { height: 28px; padding: 0 10px; font-size: 18px; }
+.browse-nav-count { min-width: 4.5em; text-align: center; }
 .browse-title {
   height: auto;
   padding: 0;
@@ -719,15 +760,22 @@ body.widget .log-row .field:not(.grow) { display: none; }
   line-height: 1.6;
   color: var(--text-body);
   white-space: pre-wrap;
-  word-break: break-word;   /* 검색어가 가려지지 않게 본문은 접지 않고 목록 전체를 스크롤한다 */
+  word-break: break-word;
 }
 .browse-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.browse-list mark { background: var(--trip-bg); color: var(--trip-fg); border-radius: 3px; padding: 0 1px; }
-.browse-list .empty { margin: 24px auto; font-size: 13px; }
-.browse-more { align-self: center; }
+.browse-body mark { background: var(--trip-bg); color: var(--trip-fg); border-radius: 3px; padding: 0 1px; }
+.browse-detail mark.current { background: var(--warning); color: #191f28; }
+.browse-body .empty { margin: 24px auto; font-size: 13px; text-align: center; }
+.browse-more { align-self: center; margin: 6px 0; }
+
+/* 좁은 창: 목록 위, 본문 아래 */
+@media (max-width: 760px) {
+  .browse-body { flex-direction: column; }
+  .browse-list { width: auto; flex: 0 0 38%; border-right: none; border-bottom: 1px solid var(--border); }
+}
 
 body.widget .log-modes { margin-bottom: 6px; }
-body.widget .browse-item { background: var(--glass); }
+body.widget .browse-body { background: var(--glass); }
 
 
 /* ------------------------------------------------------------- 업데이트 토스트 (창 우측 하단) */
